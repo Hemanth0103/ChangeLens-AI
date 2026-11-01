@@ -4,6 +4,7 @@ import { useState, type ChangeEvent } from 'react'
 export type AnalyzedFile = {
   fileName: string
   classes: string[]
+  packageName?: string
 }
 
 export type ProjectAnalysisResult = {
@@ -30,14 +31,49 @@ function ProjectUpload({
 }: ProjectUploadProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [selectionMessage, setSelectionMessage] = useState('')
 
   const handleFileChange = (
     event: ChangeEvent<HTMLInputElement>
   ) => {
     const files = Array.from(event.target.files ?? [])
 
-    onSelectedFilesChange(files)
+    const javaFiles = files.filter((file) =>
+      file.name.toLowerCase().endsWith('.java')
+    )
+
+    onSelectedFilesChange(javaFiles)
     setError('')
+
+    setSelectionMessage(
+      javaFiles.length > 0
+        ? `${javaFiles.length} Java file(s) selected.`
+        : 'No Java files were found in your selection.'
+    )
+
+    event.target.value = ''
+  }
+
+  const handleFolderChange = (
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = Array.from(event.target.files ?? [])
+
+    const javaFiles = files.filter((file) =>
+      file.name.toLowerCase().endsWith('.java')
+    )
+
+    onSelectedFilesChange(javaFiles)
+    setError('')
+
+    const ignoredFiles = files.length - javaFiles.length
+
+    setSelectionMessage(
+      `${javaFiles.length} Java file(s) found. ` +
+      `${ignoredFiles} non-Java file(s) ignored.`
+    )
+
+    event.target.value = ''
   }
 
   const analyzeProject = async () => {
@@ -52,7 +88,7 @@ function ProjectUpload({
     const formData = new FormData()
 
     selectedFiles.forEach((file) => {
-      formData.append('files', file)
+      formData.append('files', file, file.name)
     })
 
     try {
@@ -65,7 +101,8 @@ function ProjectUpload({
         throw new Error(`HTTP ${response.status}`)
       }
 
-      const data: ProjectAnalysisResult = await response.json()
+      const data: ProjectAnalysisResult =
+        await response.json()
 
       onAnalysisComplete(data)
     } catch (err) {
@@ -94,71 +131,155 @@ function ProjectUpload({
       <h2>Java Project Analysis</h2>
 
       <p>
-        Upload Java source files to identify classes
-        and dependencies in your project.
+        Upload individual Java source files or select an
+        entire project folder to analyze its classes and
+        dependencies.
       </p>
 
       <div
         style={{
+          display: 'grid',
+          gridTemplateColumns:
+            'repeat(auto-fit, minmax(240px, 1fr))',
+          gap: '16px',
           marginTop: '24px',
-          padding: '24px',
-          border: '1px dashed #475569',
-          borderRadius: '12px',
-          background: '#0b1120',
         }}
       >
-        <label
-          htmlFor="java-files"
+        <div
           style={{
-            display: 'block',
-            marginBottom: '12px',
-            fontWeight: 600,
+            padding: '24px',
+            border: '1px dashed #475569',
+            borderRadius: '12px',
+            background: '#0b1120',
           }}
         >
-          Select Java Files
-        </label>
+          <label
+            htmlFor="java-files"
+            style={{
+              display: 'block',
+              marginBottom: '12px',
+              fontWeight: 600,
+            }}
+          >
+            📄 Choose Java Files
+          </label>
 
-        <input
-          id="java-files"
-          type="file"
-          accept=".java"
-          multiple
-          onChange={handleFileChange}
-          disabled={loading}
-          style={{
-            width: '100%',
-            color: '#e2e8f0',
-          }}
-        />
+          <input
+            id="java-files"
+            type="file"
+            accept=".java"
+            multiple
+            onChange={handleFileChange}
+            disabled={loading}
+            style={{
+              width: '100%',
+              color: '#e2e8f0',
+            }}
+          />
 
-        <p
+          <p
+            style={{
+              marginTop: '12px',
+              color: '#94a3b8',
+              fontSize: '13px',
+            }}
+          >
+            Select one or more individual .java files.
+          </p>
+        </div>
+
+        <div
           style={{
-            marginTop: '12px',
-            color: '#94a3b8',
-            fontSize: '14px',
+            padding: '24px',
+            border: '1px dashed #38bdf8',
+            borderRadius: '12px',
+            background: '#0b1120',
           }}
         >
-          Select one or more .java files.
-        </p>
+          <label
+            htmlFor="java-folder"
+            style={{
+              display: 'block',
+              marginBottom: '12px',
+              fontWeight: 600,
+            }}
+          >
+            📁 Choose Project Folder
+          </label>
+
+          <input
+            id="java-folder"
+            type="file"
+            {...({
+              webkitdirectory: '',
+              directory: '',
+            } as React.InputHTMLAttributes<HTMLInputElement>)}
+            multiple
+            onChange={handleFolderChange}
+            disabled={loading}
+            style={{
+              width: '100%',
+              color: '#e2e8f0',
+            }}
+          />
+
+          <p
+            style={{
+              marginTop: '12px',
+              color: '#94a3b8',
+              fontSize: '13px',
+            }}
+          >
+            Select a folder containing Java source files.
+            Subfolders are included automatically.
+          </p>
+        </div>
       </div>
 
-      {selectedFiles.length > 0 && (
-        <div style={{ marginTop: '20px' }}>
-          <h3>Selected Files ({selectedFiles.length})</h3>
+      {selectionMessage && (
+        <p
+          style={{
+            marginTop: '16px',
+            color: '#38bdf8',
+          }}
+        >
+          {selectionMessage}
+        </p>
+      )}
 
-          {selectedFiles.map((file, index) => (
-            <div
-              key={`${file.name}-${index}`}
-              style={{
-                padding: '10px 14px',
-                marginTop: '8px',
-                background: '#1e293b',
-                borderRadius: '8px',
-              }}
-            >
-              📄 {file.name}
-            </div>
-          ))}
+      {selectedFiles.length > 0 && (
+        <div style={{ marginTop: '24px' }}>
+          <h3>
+            Selected Java Files ({selectedFiles.length})
+          </h3>
+
+          <div
+            style={{
+              maxHeight: '300px',
+              overflowY: 'auto',
+              marginTop: '12px',
+            }}
+          >
+            {selectedFiles.map((file, index) => {
+              const relativePath =
+                file.webkitRelativePath || file.name
+
+              return (
+                <div
+                  key={`${relativePath}-${index}`}
+                  style={{
+                    padding: '10px 14px',
+                    marginTop: '8px',
+                    background: '#1e293b',
+                    borderRadius: '8px',
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  📄 {relativePath}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -174,14 +295,23 @@ function ProjectUpload({
           borderRadius: '8px',
           cursor: loading ? 'wait' : 'pointer',
           opacity:
-            loading || selectedFiles.length === 0 ? 0.6 : 1,
+            loading || selectedFiles.length === 0
+              ? 0.6
+              : 1,
         }}
       >
-        {loading ? 'Analyzing Project...' : 'Analyze Project'}
+        {loading
+          ? 'Analyzing Project...'
+          : 'Analyze Project'}
       </button>
 
       {error && (
-        <p style={{ color: '#f87171', marginTop: '20px' }}>
+        <p
+          style={{
+            color: '#f87171',
+            marginTop: '20px',
+          }}
+        >
           {error}
         </p>
       )}
@@ -224,9 +354,21 @@ function ProjectUpload({
                   padding: '14px',
                   background: '#0f172a',
                   borderRadius: '8px',
+                  overflowWrap: 'anywhere',
                 }}
               >
                 <strong>{file.fileName}</strong>
+
+                {file.packageName && (
+                  <p
+                    style={{
+                      color: '#94a3b8',
+                      fontSize: '13px',
+                    }}
+                  >
+                    Package: {file.packageName}
+                  </p>
+                )}
 
                 <p>
                   Classes:{' '}
@@ -242,31 +384,39 @@ function ProjectUpload({
             </h4>
 
             {dependencyEntries.length === 0 ? (
-              <p>No dependencies found between uploaded classes.</p>
+              <p>
+                No dependencies found between uploaded
+                classes.
+              </p>
             ) : (
-              dependencyEntries.map(({ source, target }, index) => (
-                <div
-                  key={`${source}-${target}-${index}`}
-                  style={{
-                    marginTop: '10px',
-                    padding: '14px',
-                    background: '#0f172a',
-                    border: '1px solid #334155',
-                    borderRadius: '8px',
-                  }}
-                >
-                  <strong>{source}</strong>
-                  <span
+              dependencyEntries.map(
+                ({ source, target }, index) => (
+                  <div
+                    key={`${source}-${target}-${index}`}
                     style={{
-                      color: '#38bdf8',
-                      margin: '0 12px',
+                      marginTop: '10px',
+                      padding: '14px',
+                      background: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '8px',
+                      overflowWrap: 'anywhere',
                     }}
                   >
-                    →
-                  </span>
-                  <strong>{target}</strong>
-                </div>
-              ))
+                    <strong>{source}</strong>
+
+                    <span
+                      style={{
+                        color: '#38bdf8',
+                        margin: '0 12px',
+                      }}
+                    >
+                      →
+                    </span>
+
+                    <strong>{target}</strong>
+                  </div>
+                )
+              )
             )}
 
             {result.errors.length > 0 && (
@@ -276,7 +426,10 @@ function ProjectUpload({
                 </h4>
 
                 {result.errors.map((message, index) => (
-                  <p key={index} style={{ color: '#fca5a5' }}>
+                  <p
+                    key={index}
+                    style={{ color: '#fca5a5' }}
+                  >
                     {message}
                   </p>
                 ))}
