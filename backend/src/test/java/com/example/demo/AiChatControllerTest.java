@@ -2,6 +2,7 @@
 package com.example.demo;
 
 import com.example.demo.controller.AiChatController;
+import com.example.demo.service.AiResponseValidator;
 import com.example.demo.service.ChangeImpactService;
 import com.example.demo.service.OllamaService;
 
@@ -34,9 +35,13 @@ class AiChatControllerTest {
         ChangeImpactService changeImpactService =
                 new ChangeImpactService();
 
+        AiResponseValidator aiResponseValidator =
+                new AiResponseValidator();
+
         controller = new AiChatController(
                 ollamaService,
-                changeImpactService
+                changeImpactService,
+                aiResponseValidator
         );
 
         dependencies = Map.of(
@@ -113,6 +118,7 @@ class AiChatControllerTest {
 
         assertTrue(answer.contains("Verified Impact Analysis"));
         assertTrue(answer.contains("Test the dependent classes."));
+        assertTrue(answer.contains("AI-Generated Explanation"));
     }
 
     @Test
@@ -190,6 +196,93 @@ class AiChatControllerTest {
         assertEquals(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 response.getStatusCode()
+        );
+    }
+
+    @Test
+    void inventedMethodProducesVisibleWarning() {
+
+        when(ollamaService.generateExplanation(anyString()))
+                .thenReturn(
+                        "Call PaymentService.refundPayment() to issue refunds."
+                );
+
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "Analyze PaymentService",
+                        dependencies,
+                        classMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        String answer = extractAnswer(response);
+
+        assertTrue(
+                answer.contains("Unverified Method References")
+        );
+
+        assertTrue(
+                answer.contains("demo.PaymentService.refundPayment()")
+        );
+    }
+
+    @Test
+    void verifiedMethodDoesNotProduceWarning() {
+
+        when(ollamaService.generateExplanation(anyString()))
+                .thenReturn(
+                        "Consider testing PaymentService.processPayment()."
+                );
+
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "Analyze PaymentService",
+                        dependencies,
+                        classMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        String answer = extractAnswer(response);
+
+        assertFalse(
+                answer.contains("Unverified Method References")
+        );
+    }
+
+    @Test
+    void multipleInventedMethodsProduceWarnings() {
+
+        when(ollamaService.generateExplanation(anyString()))
+                .thenReturn("""
+                        PaymentService.refundPayment() handles refunds.
+                        OrderController.deleteOrder() deletes orders.
+                        """);
+
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "Analyze PaymentService",
+                        dependencies,
+                        classMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        String answer = extractAnswer(response);
+
+        assertTrue(
+                answer.contains("demo.PaymentService.refundPayment()")
+        );
+
+        assertTrue(
+                answer.contains("demo.OrderController.deleteOrder()")
         );
     }
 

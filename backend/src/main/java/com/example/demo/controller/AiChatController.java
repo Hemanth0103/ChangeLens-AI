@@ -1,6 +1,7 @@
 
 package com.example.demo.controller;
 
+import com.example.demo.service.AiResponseValidator;
 import com.example.demo.service.ChangeImpactService;
 import com.example.demo.service.OllamaService;
 
@@ -16,13 +17,16 @@ public class AiChatController {
 
     private final OllamaService ollamaService;
     private final ChangeImpactService changeImpactService;
+    private final AiResponseValidator aiResponseValidator;
 
     public AiChatController(
             OllamaService ollamaService,
-            ChangeImpactService changeImpactService) {
+            ChangeImpactService changeImpactService,
+            AiResponseValidator aiResponseValidator) {
 
         this.ollamaService = ollamaService;
         this.changeImpactService = changeImpactService;
+        this.aiResponseValidator = aiResponseValidator;
     }
 
     @PostMapping("/chat")
@@ -286,6 +290,35 @@ public class AiChatController {
             String aiAnswer =
                     ollamaService.generateExplanation(prompt);
 
+            List<String> unverifiedMethods =
+                    aiResponseValidator.findUnverifiedMethods(
+                            aiAnswer,
+                            classMethods
+                    );
+
+            String validationWarning = "";
+
+            if (!unverifiedMethods.isEmpty()) {
+
+                validationWarning = """
+
+                        ### Unverified Method References
+
+                        The AI response mentions method references
+                        that were not confirmed by the uploaded
+                        project's extracted method list:
+
+                        %s
+
+                        Treat these references as unverified.
+                        Check the actual source code before
+                        relying on them.
+
+                        """.formatted(
+                        formatUnverifiedMethods(unverifiedMethods)
+                );
+            }
+
             String answer;
 
             if (changedClass != null) {
@@ -295,27 +328,39 @@ public class AiChatController {
 
                         %s
 
-                        ## AI Explanation
+                        ## AI-Generated Explanation and Suggestions
 
                         %s
+
+                        %s
+
+                        *AI suggestions are not verified method
+                        behavior or confirmed test results.*
                         """.formatted(
                         formatVerifiedImpact(
                                 changedClass,
                                 verifiedImpact
                         ),
-                        aiAnswer
+                        aiAnswer,
+                        validationWarning
                 );
 
             } else {
+
                 answer = """
-                        ## AI Explanation
+                        ## AI-Generated Explanation and Suggestions
 
                         %s
 
-                        *This explanation is based on the
-                        extracted project dependency graph
-                        and available method names.*
-                        """.formatted(aiAnswer);
+                        %s
+
+                        *This explanation uses the extracted
+                        dependency graph and available method names.
+                        Method behavior has not been verified.*
+                        """.formatted(
+                        aiAnswer,
+                        validationWarning
+                );
             }
 
             return ResponseEntity.ok(
@@ -333,6 +378,20 @@ public class AiChatController {
                     )
             );
         }
+    }
+
+    private String formatUnverifiedMethods(
+            List<String> unverifiedMethods) {
+
+        StringBuilder result = new StringBuilder();
+
+        for (String method : unverifiedMethods) {
+            result.append("- `")
+                    .append(method)
+                    .append("`\n");
+        }
+
+        return result.toString();
     }
 
     private boolean containsClassName(
