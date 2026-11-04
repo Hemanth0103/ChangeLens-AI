@@ -12,10 +12,80 @@ type ImpactResult = {
   totalImpacted: number
 }
 
+type ImpactDetail = {
+  className: string
+  level: number
+  path: string[]
+}
+
 const sampleDependencies: Record<string, string[]> = {
   OrderController: ['OrderService'],
   OrderService: ['PaymentService'],
   PaymentService: [],
+}
+
+function calculateImpactDetails(
+  changedClass: string,
+  dependencies: Record<string, string[]>
+): ImpactDetail[] {
+  const reverseDependencies: Record<string, string[]> = {}
+
+  for (const [source, targets] of Object.entries(dependencies)) {
+    for (const target of targets) {
+      if (!reverseDependencies[target]) {
+        reverseDependencies[target] = []
+      }
+
+      if (!reverseDependencies[target].includes(source)) {
+        reverseDependencies[target].push(source)
+      }
+    }
+  }
+
+  const visited = new Set<string>([changedClass])
+
+  const queue: ImpactDetail[] = [
+    {
+      className: changedClass,
+      level: 0,
+      path: [changedClass],
+    },
+  ]
+
+  const results: ImpactDetail[] = []
+
+  let index = 0
+
+  while (index < queue.length) {
+    const current = queue[index]
+    index++
+
+    const dependents =
+      reverseDependencies[current.className] ?? []
+
+    for (const dependent of dependents) {
+      if (visited.has(dependent)) {
+        continue
+      }
+
+      visited.add(dependent)
+
+      const detail: ImpactDetail = {
+        className: dependent,
+        level: current.level + 1,
+        path: [...current.path, dependent],
+      }
+
+      results.push(detail)
+      queue.push(detail)
+    }
+  }
+
+  return results.sort(
+    (a, b) =>
+      a.level - b.level ||
+      a.className.localeCompare(b.className)
+  )
 }
 
 function ImpactAnalysis({
@@ -27,9 +97,15 @@ function ImpactAnalysis({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const activeDependencies = dependencies ?? sampleDependencies
+  const activeDependencies =
+    dependencies ?? sampleDependencies
 
-  const classNames = Object.keys(activeDependencies).sort()
+  const classNames = Array.from(
+    new Set([
+      ...Object.keys(activeDependencies),
+      ...Object.values(activeDependencies).flat(),
+    ])
+  ).sort()
 
   useEffect(() => {
     setSelectedClass('')
@@ -78,13 +154,31 @@ function ImpactAnalysis({
     }
   }
 
+  const impactDetails = result
+    ? calculateImpactDetails(
+        result.changedClass,
+        activeDependencies
+      ).filter((detail) =>
+        result.impactedClasses.includes(detail.className)
+      )
+    : []
+
+  const directImpacts = impactDetails.filter(
+    (detail) => detail.level === 1
+  )
+
+  const indirectImpacts = impactDetails.filter(
+    (detail) => detail.level > 1
+  )
+
   return (
     <div>
       <h2>Java Change Impact Analysis</h2>
 
       <p>
-        Identify which Java classes may be affected when
-        another class changes.
+        Discover which Java classes may be affected by
+        a code change and understand how the impact
+        propagates through dependencies.
       </p>
 
       <p
@@ -156,7 +250,8 @@ function ImpactAnalysis({
             border: 'none',
             borderRadius: '8px',
             cursor: loading ? 'wait' : 'pointer',
-            opacity: loading || !selectedClass ? 0.6 : 1,
+            opacity:
+              loading || !selectedClass ? 0.6 : 1,
           }}
         >
           {loading
@@ -189,15 +284,65 @@ function ImpactAnalysis({
           <h3>Impact Analysis Results</h3>
 
           <p>
-            Changed Class: <strong>{result.changedClass}</strong>
+            Changed Class:{' '}
+            <strong>{result.changedClass}</strong>
           </p>
 
-          <p>
-            Total Impacted Classes:{' '}
-            <strong>{result.totalImpacted}</strong>
-          </p>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: '12px',
+              marginTop: '20px',
+            }}
+          >
+            {[
+              {
+                label: 'Total Impacted',
+                value: result.totalImpacted,
+              },
+              {
+                label: 'Direct Impact',
+                value: directImpacts.length,
+              },
+              {
+                label: 'Indirect Impact',
+                value: indirectImpacts.length,
+              },
+            ].map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  padding: '16px',
+                  background: '#0f172a',
+                  border: '1px solid #334155',
+                  borderRadius: '10px',
+                }}
+              >
+                <div
+                  style={{
+                    color: '#94a3b8',
+                    fontSize: '13px',
+                  }}
+                >
+                  {item.label}
+                </div>
 
-          <h4 style={{ marginTop: '20px' }}>
+                <div
+                  style={{
+                    marginTop: '8px',
+                    fontSize: '26px',
+                    fontWeight: 700,
+                  }}
+                >
+                  {item.value}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <h4 style={{ marginTop: '24px' }}>
             Potentially Affected Classes
           </h4>
 
@@ -206,21 +351,111 @@ function ImpactAnalysis({
               No other uploaded classes depend on this class.
             </p>
           ) : (
-            result.impactedClasses.map((className) => (
+            impactDetails.map((detail) => (
               <div
-                key={className}
+                key={detail.className}
                 style={{
-                  marginTop: '10px',
-                  padding: '14px',
+                  marginTop: '12px',
+                  padding: '16px',
                   background: '#0f172a',
                   border: '1px solid #334155',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
+                  overflowWrap: 'anywhere',
                 }}
               >
-                ⚠️ {className}
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '12px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <strong>{detail.className}</strong>
+
+                  <span
+                    style={{
+                      color:
+                        detail.level === 1
+                          ? '#38bdf8'
+                          : '#fbbf24',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {detail.level === 1
+                      ? 'Direct Impact'
+                      : 'Indirect Impact'}
+                  </span>
+                </div>
+
+                <p
+                  style={{
+                    color: '#94a3b8',
+                    fontSize: '13px',
+                    marginTop: '10px',
+                  }}
+                >
+                  Dependency distance: {detail.level}{' '}
+                  {detail.level === 1 ? 'step' : 'steps'}
+                </p>
+
+                <div
+                  style={{
+                    marginTop: '12px',
+                    padding: '12px',
+                    background: '#1e293b',
+                    borderRadius: '8px',
+                    color: '#cbd5e1',
+                    fontSize: '13px',
+                    lineHeight: 1.8,
+                  }}
+                >
+                  <strong>Impact path:</strong>
+                  <div style={{ marginTop: '6px' }}>
+                    {detail.path.join(' → ')}
+                  </div>
+                </div>
+
+                <p
+                  style={{
+                    marginTop: '12px',
+                    color: '#cbd5e1',
+                    fontSize: '13px',
+                  }}
+                >
+                  {detail.level === 1
+                    ? `${detail.className} directly depends on the changed class and may require testing.`
+                    : `${detail.className} depends on another potentially affected class and may require regression testing.`}
+                </p>
               </div>
             ))
           )}
+
+          {impactDetails.length !==
+            result.impactedClasses.length && (
+            <p
+              style={{
+                marginTop: '16px',
+                color: '#fbbf24',
+              }}
+            >
+              Some backend-reported impacts could not
+              be matched to a dependency path.
+            </p>
+          )}
+
+          <p
+            style={{
+              marginTop: '20px',
+              color: '#94a3b8',
+              fontSize: '13px',
+            }}
+          >
+            Note: These results represent potential
+            dependency-based impacts, not confirmed bugs.
+          </p>
         </div>
       )}
     </div>
