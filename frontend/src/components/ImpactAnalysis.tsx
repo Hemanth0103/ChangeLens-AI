@@ -10,6 +10,12 @@ type ImpactResult = {
   changedClass: string
   impactedClasses: string[]
   totalImpacted: number
+  directImpact: number
+  indirectImpact: number
+  maxDepth: number
+  projectReach: number
+  riskScore: number
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
 }
 
 type ImpactDetail = {
@@ -43,7 +49,6 @@ function calculateImpactDetails(
   }
 
   const visited = new Set<string>([changedClass])
-
   const queue: ImpactDetail[] = [
     {
       className: changedClass,
@@ -51,9 +56,7 @@ function calculateImpactDetails(
       path: [changedClass],
     },
   ]
-
   const results: ImpactDetail[] = []
-
   let index = 0
 
   while (index < queue.length) {
@@ -86,6 +89,12 @@ function calculateImpactDetails(
       a.level - b.level ||
       a.className.localeCompare(b.className)
   )
+}
+
+const riskColors = {
+  LOW: '#22c55e',
+  MEDIUM: '#f59e0b',
+  HIGH: '#ef4444',
 }
 
 function ImpactAnalysis({
@@ -141,6 +150,15 @@ function ImpactAnalysis({
 
       const data: ImpactResult = await response.json()
 
+      if (
+        typeof data.riskScore !== 'number' ||
+        !['LOW', 'MEDIUM', 'HIGH'].includes(data.riskLevel)
+      ) {
+        throw new Error(
+          'Backend response does not include valid risk scoring.'
+        )
+      }
+
       setResult(data)
       onImpactedClasses(data.totalImpacted)
     } catch (err) {
@@ -170,6 +188,25 @@ function ImpactAnalysis({
   const indirectImpacts = impactDetails.filter(
     (detail) => detail.level > 1
   )
+
+  const riskColor = result
+    ? riskColors[result.riskLevel]
+    : '#94a3b8'
+
+  const metricGridStyle = {
+    display: 'grid',
+    gridTemplateColumns:
+      'repeat(auto-fit, minmax(150px, 1fr))',
+    gap: '12px',
+    marginTop: '20px',
+  }
+
+  const metricCardStyle = {
+    padding: '16px',
+    background: '#0f172a',
+    border: '1px solid #334155',
+    borderRadius: '10px',
+  }
 
   return (
     <div>
@@ -250,8 +287,7 @@ function ImpactAnalysis({
             border: 'none',
             borderRadius: '8px',
             cursor: loading ? 'wait' : 'pointer',
-            opacity:
-              loading || !selectedClass ? 0.6 : 1,
+            opacity: loading || !selectedClass ? 0.6 : 1,
           }}
         >
           {loading
@@ -288,15 +324,7 @@ function ImpactAnalysis({
             <strong>{result.changedClass}</strong>
           </p>
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns:
-                'repeat(auto-fit, minmax(150px, 1fr))',
-              gap: '12px',
-              marginTop: '20px',
-            }}
-          >
+          <div style={metricGridStyle}>
             {[
               {
                 label: 'Total Impacted',
@@ -311,15 +339,7 @@ function ImpactAnalysis({
                 value: indirectImpacts.length,
               },
             ].map((item) => (
-              <div
-                key={item.label}
-                style={{
-                  padding: '16px',
-                  background: '#0f172a',
-                  border: '1px solid #334155',
-                  borderRadius: '10px',
-                }}
-              >
+              <div key={item.label} style={metricCardStyle}>
                 <div
                   style={{
                     color: '#94a3b8',
@@ -328,7 +348,6 @@ function ImpactAnalysis({
                 >
                   {item.label}
                 </div>
-
                 <div
                   style={{
                     marginTop: '8px',
@@ -340,6 +359,156 @@ function ImpactAnalysis({
                 </div>
               </div>
             ))}
+          </div>
+
+          <div
+            style={{
+              marginTop: '24px',
+              padding: '24px',
+              background: '#0f172a',
+              border: '1px solid #334155',
+              borderRadius: '12px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '12px',
+              }}
+            >
+              <h3 style={{ margin: 0 }}>
+                Change Risk Assessment
+              </h3>
+
+              <span
+                style={{
+                  color: riskColor,
+                  background: `${riskColor}20`,
+                  border: `1px solid ${riskColor}`,
+                  padding: '6px 12px',
+                  borderRadius: '20px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                }}
+              >
+                {result.riskLevel} RISK
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: '10px',
+                marginTop: '20px',
+              }}
+            >
+              <strong
+                style={{
+                  fontSize: '40px',
+                  color: riskColor,
+                }}
+              >
+                {result.riskScore}/100
+              </strong>
+
+              <span
+                style={{
+                  color: '#94a3b8',
+                  fontSize: '13px',
+                }}
+              >
+                Structural risk score
+              </span>
+            </div>
+
+            <div
+              role="progressbar"
+              aria-label="Change risk score"
+              aria-valuenow={result.riskScore}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              style={{
+                width: '100%',
+                height: '12px',
+                background: '#334155',
+                borderRadius: '8px',
+                overflow: 'hidden',
+                marginTop: '16px',
+              }}
+            >
+              <div
+                style={{
+                  width: `${Math.max(
+                    0,
+                    Math.min(100, result.riskScore)
+                  )}%`,
+                  height: '100%',
+                  background: riskColor,
+                  borderRadius: '8px',
+                  transition: 'width 0.3s ease',
+                }}
+              />
+            </div>
+
+            <div style={metricGridStyle}>
+              {[
+                {
+                  label: 'Direct Impact',
+                  value: result.directImpact,
+                },
+                {
+                  label: 'Indirect Impact',
+                  value: result.indirectImpact,
+                },
+                {
+                  label: 'Maximum Depth',
+                  value: result.maxDepth,
+                },
+                {
+                  label: 'Project Reach',
+                  value: `${result.projectReach.toFixed(2)}%`,
+                },
+              ].map((item) => (
+                <div key={item.label} style={metricCardStyle}>
+                  <div
+                    style={{
+                      color: '#94a3b8',
+                      fontSize: '13px',
+                    }}
+                  >
+                    {item.label}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: '8px',
+                      fontSize: '24px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {item.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <p
+              style={{
+                marginTop: '20px',
+                color: '#94a3b8',
+                fontSize: '13px',
+                lineHeight: 1.6,
+              }}
+            >
+              This heuristic score measures structural
+              dependency exposure. It does not predict
+              the probability of a bug or guarantee
+              that affected classes will fail.
+            </p>
           </div>
 
           <h4 style={{ marginTop: '24px' }}>
