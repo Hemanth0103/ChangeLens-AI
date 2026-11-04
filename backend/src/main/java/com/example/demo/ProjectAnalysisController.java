@@ -25,8 +25,8 @@ public class ProjectAnalysisController {
     private final JavaParser javaParser = new JavaParser();
 
     @PostMapping(
-        value = "/analyze",
-        consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+            value = "/analyze",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
     )
     public ResponseEntity<?> analyzeProject(
             @RequestParam("files") MultipartFile[] files) {
@@ -42,27 +42,30 @@ public class ProjectAnalysisController {
         Map<String, ClassInfo> projectClasses = new LinkedHashMap<>();
         Map<String, Set<String>> rawDependencies = new LinkedHashMap<>();
 
+        // Verified method names extracted from Java source code.
+        Map<String, List<String>> classMethods = new LinkedHashMap<>();
+
         for (MultipartFile file : files) {
 
             String filename = file.getOriginalFilename();
 
             if (filename == null ||
-                !filename.toLowerCase(Locale.ROOT).endsWith(".java")) {
+                    !filename.toLowerCase(Locale.ROOT).endsWith(".java")) {
                 errors.add("Only Java files are supported: " + filename);
                 continue;
             }
 
             try {
                 String source = new String(
-                    file.getBytes(),
-                    StandardCharsets.UTF_8
+                        file.getBytes(),
+                        StandardCharsets.UTF_8
                 );
 
                 ParseResult<CompilationUnit> parseResult =
                         javaParser.parse(source);
 
                 if (!parseResult.isSuccessful() ||
-                    parseResult.getResult().isEmpty()) {
+                        parseResult.getResult().isEmpty()) {
                     errors.add("Unable to parse: " + filename);
                     continue;
                 }
@@ -80,7 +83,7 @@ public class ProjectAnalysisController {
                         compilationUnit.getImports()) {
 
                     if (importDeclaration.isStatic() ||
-                        importDeclaration.isAsterisk()) {
+                            importDeclaration.isAsterisk()) {
                         continue;
                     }
 
@@ -88,7 +91,7 @@ public class ProjectAnalysisController {
                             importDeclaration.getNameAsString();
 
                     String simpleName = importedName.substring(
-                        importedName.lastIndexOf('.') + 1
+                            importedName.lastIndexOf('.') + 1
                     );
 
                     imports.put(simpleName, importedName);
@@ -113,29 +116,31 @@ public class ProjectAnalysisController {
                     }
 
                     ClassInfo classInfo = new ClassInfo(
-                        fullName,
-                        packageName,
-                        imports
+                            fullName,
+                            packageName,
+                            imports
                     );
 
                     projectClasses.put(fullName, classInfo);
 
+                    // Extract declared methods for each class/interface.
+                    if (type instanceof ClassOrInterfaceDeclaration declaration) {
+                        List<String> methods = declaration.getMethods()
+                                .stream()
+                                .map(method -> method.getNameAsString())
+                                .distinct()
+                                .toList();
+
+                        classMethods.put(fullName, methods);
+                    } else {
+                        classMethods.put(fullName, List.of());
+                    }
+
                     Set<String> references = new LinkedHashSet<>();
 
-                    if (type instanceof ClassOrInterfaceDeclaration declaration) {
-
-                        for (ClassOrInterfaceType reference :
-                                declaration.findAll(ClassOrInterfaceType.class)) {
-
-                            references.add(reference.getNameWithScope());
-                        }
-                    } else {
-
-                        for (ClassOrInterfaceType reference :
-                                type.findAll(ClassOrInterfaceType.class)) {
-
-                            references.add(reference.getNameWithScope());
-                        }
+                    for (ClassOrInterfaceType reference :
+                            type.findAll(ClassOrInterfaceType.class)) {
+                        references.add(reference.getNameWithScope());
                     }
 
                     rawDependencies.put(fullName, references);
@@ -161,15 +166,15 @@ public class ProjectAnalysisController {
         for (String fullName : projectClasses.keySet()) {
 
             String simpleName = fullName.substring(
-                fullName.lastIndexOf('.') + 1
+                    fullName.lastIndexOf('.') + 1
             );
 
             classesBySimpleName
-                .computeIfAbsent(
-                    simpleName,
-                    key -> new LinkedHashSet<>()
-                )
-                .add(fullName);
+                    .computeIfAbsent(
+                            simpleName,
+                            key -> new LinkedHashSet<>()
+                    )
+                    .add(fullName);
         }
 
         Map<String, List<String>> dependencies =
@@ -188,19 +193,19 @@ public class ProjectAnalysisController {
 
             for (String reference :
                     rawDependencies.getOrDefault(
-                        sourceClass,
-                        Collections.emptySet()
+                            sourceClass,
+                            Collections.emptySet()
                     )) {
 
                 String resolved = resolveReference(
-                    reference,
-                    classInfo,
-                    projectClasses,
-                    classesBySimpleName
+                        reference,
+                        classInfo,
+                        projectClasses,
+                        classesBySimpleName
                 );
 
                 if (resolved != null &&
-                    !resolved.equals(sourceClass)) {
+                        !resolved.equals(sourceClass)) {
                     resolvedDependencies.add(resolved);
                 }
             }
@@ -220,6 +225,7 @@ public class ProjectAnalysisController {
         response.put("totalDependencies", totalDependencies);
         response.put("files", analyzedFiles);
         response.put("dependencies", dependencies);
+        response.put("classMethods", classMethods);
         response.put("errors", errors);
 
         return ResponseEntity.ok(response);
@@ -240,15 +246,15 @@ public class ProjectAnalysisController {
         String importedClass = classInfo.imports.get(reference);
 
         if (importedClass != null &&
-            projectClasses.containsKey(importedClass)) {
+                projectClasses.containsKey(importedClass)) {
             return importedClass;
         }
 
         // 3. Class in the same package.
         String samePackageClass =
                 classInfo.packageName.isEmpty()
-                    ? reference
-                    : classInfo.packageName + "." + reference;
+                        ? reference
+                        : classInfo.packageName + "." + reference;
 
         if (projectClasses.containsKey(samePackageClass)) {
             return samePackageClass;

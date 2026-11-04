@@ -1,17 +1,21 @@
 
 import { useState } from 'react'
+
+import AiChat from './components/AiChat'
 import CodeAnalysis from './components/CodeAnalysis'
 import DependencyGraph from './components/DependencyGraph'
 import ImpactAnalysis from './components/ImpactAnalysis'
 import ProjectUpload, {
   type ProjectAnalysisResult,
 } from './components/ProjectUpload'
+
 import './App.css'
 
 function App() {
   const [activePage, setActivePage] = useState('Dashboard')
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+
   const [projectResult, setProjectResult] =
     useState<ProjectAnalysisResult | null>(null)
 
@@ -25,6 +29,7 @@ function App() {
     'Code Analysis',
     'Dependency Graph',
     'Impact Analysis',
+    'AI Chat',
     'Settings',
   ]
 
@@ -36,9 +41,7 @@ function App() {
     setImpactedClasses(0)
   }
 
-  const handleProjectAnalysis = (
-    result: ProjectAnalysisResult
-  ) => {
+  const handleProjectAnalysis = (result: ProjectAnalysisResult) => {
     setProjectResult(result)
     setClassesAnalyzed(result.totalClasses)
     setDependenciesFound(result.totalDependencies)
@@ -95,9 +98,9 @@ function App() {
               {projectResult ? (
                 <>
                   <p>
-                    Current project: {projectResult.totalFiles} files,
-                    {' '}{projectResult.totalClasses} classes,
-                    {' '}{projectResult.totalDependencies} dependencies.
+                    Current project: {projectResult.totalFiles} files,{' '}
+                    {projectResult.totalClasses} classes,{' '}
+                    {projectResult.totalDependencies} dependencies.
                   </p>
 
                   <p>
@@ -149,6 +152,15 @@ function App() {
             <ImpactAnalysis
               dependencies={projectResult?.dependencies}
               onImpactedClasses={setImpactedClasses}
+            />
+          </section>
+        )}
+
+        {activePage === 'AI Chat' && (
+          <section className="workspace">
+            <AiChat
+              dependencies={projectResult?.dependencies}
+              classMethods={projectResult?.classMethods}
             />
           </section>
         )}

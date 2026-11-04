@@ -14,8 +14,11 @@ public class OllamaService {
     private final String model;
 
     public OllamaService(
-            @Value("${ollama.base-url:http://localhost:11434}") String baseUrl,
-            @Value("${ollama.model:qwen2.5-coder:3b}") String model) {
+            @Value("${ollama.base-url:http://localhost:11434}")
+            String baseUrl,
+
+            @Value("${ollama.model:qwen2.5-coder:3b}")
+            String model) {
 
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
@@ -35,7 +38,10 @@ public class OllamaService {
         Map<String, Object> request = Map.of(
                 "model", model,
                 "prompt", prompt,
-                "stream", false
+                "stream", false,
+                "options", Map.of(
+                        "temperature", 0
+                )
         );
 
         OllamaResponse response = restClient.post()
@@ -44,9 +50,9 @@ public class OllamaService {
                 .retrieve()
                 .body(OllamaResponse.class);
 
-        if (response == null ||
-                response.response() == null ||
-                response.response().isBlank()) {
+        if (response == null
+                || response.response() == null
+                || response.response().isBlank()) {
 
             throw new IllegalStateException(
                     "Ollama returned an empty response"

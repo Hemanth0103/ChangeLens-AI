@@ -13,6 +13,7 @@ export type ProjectAnalysisResult = {
   totalDependencies: number
   files: AnalyzedFile[]
   dependencies: Record<string, string[]>
+  classMethods: Record<string, string[]>
   errors: string[]
 }
 
@@ -70,7 +71,7 @@ function ProjectUpload({
 
     setSelectionMessage(
       `${javaFiles.length} Java file(s) found. ` +
-      `${ignoredFiles} non-Java file(s) ignored.`
+        `${ignoredFiles} non-Java file(s) ignored.`
     )
 
     event.target.value = ''
