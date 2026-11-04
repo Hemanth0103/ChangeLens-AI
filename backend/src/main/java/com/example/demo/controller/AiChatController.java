@@ -10,6 +10,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/ai")
@@ -18,6 +20,17 @@ public class AiChatController {
     private final OllamaService ollamaService;
     private final ChangeImpactService changeImpactService;
     private final AiResponseValidator aiResponseValidator;
+
+    private static final Pattern METHOD_REFERENCE =
+            Pattern.compile(
+                    "\\b([A-Za-z_$][\\w$]*)\\s*\\(\\s*\\)"
+            );
+
+    private static final Pattern EXISTENCE_QUESTION =
+            Pattern.compile(
+                    "\\b(?:does|do|has|have|exist|exists|declare|declares)\\b",
+                    Pattern.CASE_INSENSITIVE
+            );
 
     public AiChatController(
             OllamaService ollamaService,
@@ -52,6 +65,7 @@ public class AiChatController {
                         : request.classMethods();
 
         if (dependencies.isEmpty()) {
+
             return ResponseEntity.badRequest().body(
                     Map.of("error", "No project dependencies provided")
             );
@@ -71,13 +85,27 @@ public class AiChatController {
             }
         }
 
+        // Answer direct method-existence questions using verified data.
+        String verifiedMethodAnswer =
+                answerMethodExistenceQuestion(
+                        question,
+                        allClasses,
+                        classMethods
+                );
+
+        if (verifiedMethodAnswer != null) {
+
+            return ResponseEntity.ok(
+                    Map.of("answer", verifiedMethodAnswer)
+            );
+        }
+
+        // Find classes mentioned in the user's question.
         List<String> mentionedClasses = new ArrayList<>();
 
         for (String className : allClasses) {
 
-            String simpleName = className.substring(
-                    className.lastIndexOf('.') + 1
-            );
+            String simpleName = simpleName(className);
 
             if (containsClassName(question, className)
                     || containsClassName(question, simpleName)) {
@@ -140,6 +168,7 @@ public class AiChatController {
                                 Collections.emptySet())) {
 
                     if (!distances.containsKey(dependent)) {
+
                         distances.put(dependent, nextDistance);
                         queue.add(dependent);
                     }
@@ -183,6 +212,7 @@ public class AiChatController {
             );
         }
 
+        // Build verified method information for Ollama.
         StringBuilder verifiedMethods = new StringBuilder();
 
         for (String className : allClasses) {
@@ -190,12 +220,17 @@ public class AiChatController {
             List<String> methods = classMethods.get(className);
 
             if (methods == null) {
+
                 verifiedMethods.append(className)
                         .append(": method information unavailable\n");
+
             } else if (methods.isEmpty()) {
+
                 verifiedMethods.append(className)
                         .append(": no declared methods extracted\n");
+
             } else {
+
                 verifiedMethods.append(className)
                         .append(": ")
                         .append(methods)
@@ -380,12 +415,177 @@ public class AiChatController {
         }
     }
 
+    private String answerMethodExistenceQuestion(
+            String question,
+            Set<String> allClasses,
+            Map<String, List<String>> classMethods) {
+
+        // Only intercept direct method-existence questions.
+        if (!EXISTENCE_QUESTION.matcher(question).find()) {
+            return null;
+        }
+
+        Matcher methodMatcher =
+                METHOD_REFERENCE.matcher(question);
+
+        List<String> results = new ArrayList<>();
+
+        while (methodMatcher.find()) {
+
+            String methodName = methodMatcher.group(1);
+
+            String prefix =
+                    question.substring(0, methodMatcher.start());
+
+            String matchedClass = null;
+            int bestPosition = -1;
+
+            for (String className : allClasses) {
+
+                String simpleName = simpleName(className);
+
+                int fullPosition =
+                        lastClassPosition(prefix, className);
+
+                int simplePosition =
+                        lastClassPosition(prefix, simpleName);
+
+                int position =
+                        Math.max(fullPosition, simplePosition);
+
+                if (position > bestPosition) {
+
+                    bestPosition = position;
+                    matchedClass = className;
+                }
+            }
+
+            if (matchedClass == null) {
+                return null;
+            }
+
+            List<String> declaredMethods =
+                    classMethods.get(matchedClass);
+
+            if (declaredMethods == null) {
+
+                results.add(
+                        ("- **`%s.%s()`**: Method information is unavailable "
+                                + "for this class in the uploaded analysis.")
+                                .formatted(
+                                        matchedClass,
+                                        methodName
+                                )
+                );
+
+            } else if (declaredMethods.contains(methodName)) {
+
+                results.add(
+                        ("- **`%s.%s()`**: This method name is listed "
+                                + "among the extracted declared methods.")
+                                .formatted(
+                                        matchedClass,
+                                        methodName
+                                )
+                );
+
+            } else {
+
+                String availableMethods =
+                        declaredMethods.isEmpty()
+                                ? "No declared methods were extracted."
+                                : "Extracted declared methods: "
+                                        + formatMethodNames(declaredMethods);
+
+                results.add(
+                        ("- **`%s.%s()`**: This method is not listed "
+                                + "among the extracted declared methods. %s")
+                                .formatted(
+                                        matchedClass,
+                                        methodName,
+                                        availableMethods
+                                )
+                );
+            }
+        }
+
+        if (results.isEmpty()) {
+            return null;
+        }
+
+        return """
+                ## Verified Method Declaration Check
+
+                %s
+
+                *These results are based on extracted method
+                declarations, not method bodies, inherited methods,
+                or runtime behavior.*
+                """.formatted(
+                String.join("\n", results)
+        );
+    }
+
+    private int lastClassPosition(
+            String text,
+            String className) {
+
+        int lastPosition = -1;
+
+        String lowerText =
+                text.toLowerCase(Locale.ROOT);
+
+        String lowerClass =
+                className.toLowerCase(Locale.ROOT);
+
+        int index = lowerText.indexOf(lowerClass);
+
+        while (index >= 0) {
+
+            int end = index + lowerClass.length();
+
+            boolean validStart = index == 0
+                    || !Character.isJavaIdentifierPart(
+                            lowerText.charAt(index - 1)
+                    );
+
+            boolean validEnd = end == lowerText.length()
+                    || !Character.isJavaIdentifierPart(
+                            lowerText.charAt(end)
+                    );
+
+            if (validStart && validEnd) {
+                lastPosition = index;
+            }
+
+            index = lowerText.indexOf(
+                    lowerClass,
+                    index + 1
+            );
+        }
+
+        return lastPosition;
+    }
+
+    private String formatMethodNames(
+            List<String> methods) {
+
+        List<String> formatted = new ArrayList<>();
+
+        for (String method : methods) {
+            formatted.add("`" + method + "()`");
+        }
+
+        return String.join(", ", formatted);
+    }
+
     private String formatUnverifiedMethods(
             List<String> unverifiedMethods) {
 
         StringBuilder result = new StringBuilder();
 
         for (String method : unverifiedMethods) {
+
             result.append("- `")
                     .append(method)
                     .append("`\n");
@@ -398,41 +598,14 @@ public class AiChatController {
             String question,
             String className) {
 
-        String lowerQuestion = question.toLowerCase(
-                Locale.ROOT
+        return lastClassPosition(question, className) >= 0;
+    }
+
+    private String simpleName(String qualifiedClass) {
+
+        return qualifiedClass.substring(
+                qualifiedClass.lastIndexOf('.') + 1
         );
-
-        String lowerClass = className.toLowerCase(
-                Locale.ROOT
-        );
-
-        int index = lowerQuestion.indexOf(lowerClass);
-
-        while (index >= 0) {
-
-            int end = index + lowerClass.length();
-
-            boolean validStart = index == 0
-                    || !Character.isJavaIdentifierPart(
-                            lowerQuestion.charAt(index - 1)
-                    );
-
-            boolean validEnd = end == lowerQuestion.length()
-                    || !Character.isJavaIdentifierPart(
-                            lowerQuestion.charAt(end)
-                    );
-
-            if (validStart && validEnd) {
-                return true;
-            }
-
-            index = lowerQuestion.indexOf(
-                    lowerClass,
-                    index + 1
-            );
-        }
-
-        return false;
     }
 
     private String formatVerifiedImpact(

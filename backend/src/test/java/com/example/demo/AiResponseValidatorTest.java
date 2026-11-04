@@ -60,12 +60,16 @@ class AiResponseValidatorTest {
 
     @Test
     void verifiedUnqualifiedMethodWithClassContextProducesNoWarning() {
-        assertNoWarnings("OrderService uses placeOrder().");
+        assertNoWarnings(
+                "OrderService uses placeOrder()."
+        );
     }
 
     @Test
     void unqualifiedMethodWithoutClassContextIsIgnored() {
-        assertNoWarnings("Call refundPayment() to issue a refund.");
+        assertNoWarnings(
+                "Call refundPayment() to issue a refund."
+        );
     }
 
     @Test
@@ -141,7 +145,7 @@ class AiResponseValidatorTest {
         );
     }
 
-    // New tests: negative statements
+    // Negative statement tests
 
     @Test
     void doesNotHaveMethodProducesNoWarning() {
@@ -197,14 +201,44 @@ class AiResponseValidatorTest {
         );
     }
 
-    /*
-     * Known limitation:
-     * A negative phrase can suppress validation of an
-     * unrelated positive claim within the same sentence.
-     *
-     * We'll address this with more precise claim-level
-     * validation in the next refinement.
-     */
+    // New regression tests: mixed positive and negative claims
+
+    @Test
+    void negativeAndPositiveClaimsInSameSentence() {
+        assertWarnings(
+                "PaymentService does not have refundPayment(), "
+                        + "but OrderController.deleteOrder() deletes orders.",
+                "demo.OrderController.deleteOrder()"
+        );
+    }
+
+    @Test
+    void positiveClaimBeforeNegativeClaim() {
+        assertWarnings(
+                "OrderController.deleteOrder() deletes orders, "
+                        + "but PaymentService does not have refundPayment().",
+                "demo.OrderController.deleteOrder()"
+        );
+    }
+
+    @Test
+    void negativeAndPositiveUnqualifiedMethodsInSameSentence() {
+        assertWarnings(
+                "PaymentService does not have refundPayment(), "
+                        + "but OrderService provides cancelOrder().",
+                "demo.OrderService.cancelOrder()"
+        );
+    }
+
+    @Test
+    void twoNegativeClaimsInSameSentenceProduceNoWarnings() {
+        assertNoWarnings(
+                "PaymentService does not have refundPayment(), "
+                        + "and OrderController does not declare deleteOrder()."
+        );
+    }
+
+    // Assertion helpers
 
     private void assertNoWarnings(String answer) {
         assertTrue(

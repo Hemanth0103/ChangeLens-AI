@@ -46,16 +46,23 @@ class AiChatControllerTest {
 
         dependencies = Map.of(
                 "demo.PaymentService", List.of(),
-                "demo.OrderService", List.of("demo.PaymentService"),
-                "demo.OrderController", List.of("demo.OrderService")
+                "demo.OrderService",
+                List.of("demo.PaymentService"),
+                "demo.OrderController",
+                List.of("demo.OrderService")
         );
 
         classMethods = Map.of(
-                "demo.PaymentService", List.of("processPayment"),
-                "demo.OrderService", List.of("placeOrder"),
-                "demo.OrderController", List.of("checkout")
+                "demo.PaymentService",
+                List.of("processPayment"),
+                "demo.OrderService",
+                List.of("placeOrder"),
+                "demo.OrderController",
+                List.of("checkout")
         );
     }
+
+    // TEST 1: Empty question
 
     @Test
     void emptyQuestionReturnsBadRequest() {
@@ -77,6 +84,8 @@ class AiChatControllerTest {
         verifyNoInteractions(ollamaService);
     }
 
+    // TEST 2: Missing dependencies
+
     @Test
     void missingDependenciesReturnsBadRequest() {
 
@@ -97,6 +106,8 @@ class AiChatControllerTest {
         verifyNoInteractions(ollamaService);
     }
 
+    // TEST 3: Valid general question
+
     @Test
     void validQuestionReturnsSuccessfulAnswer() {
 
@@ -112,14 +123,27 @@ class AiChatControllerTest {
 
         ResponseEntity<?> response = controller.chat(request);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode()
+        );
 
         String answer = extractAnswer(response);
 
-        assertTrue(answer.contains("Verified Impact Analysis"));
-        assertTrue(answer.contains("Test the dependent classes."));
-        assertTrue(answer.contains("AI-Generated Explanation"));
+        assertTrue(
+                answer.contains("Verified Impact Analysis")
+        );
+
+        assertTrue(
+                answer.contains("Test the dependent classes.")
+        );
+
+        assertTrue(
+                answer.contains("AI-Generated Explanation")
+        );
     }
+
+    // TEST 4: Method context in AI prompt
 
     @Test
     void verifiedMethodsAreIncludedInAiPrompt() {
@@ -144,6 +168,8 @@ class AiChatControllerTest {
                 )
         );
     }
+
+    // TEST 5: Direct and indirect impact
 
     @Test
     void directAndIndirectImpactAreCorrect() {
@@ -174,15 +200,24 @@ class AiChatControllerTest {
                 )
         );
 
-        assertTrue(answer.contains("Total impacted: 2"));
-        assertTrue(answer.contains("Structural risk score: 55/100"));
+        assertTrue(
+                answer.contains("Total impacted: 2")
+        );
+
+        assertTrue(
+                answer.contains("Structural risk score: 55/100")
+        );
     }
+
+    // TEST 6: Ollama failure
 
     @Test
     void ollamaFailureReturnsServiceUnavailable() {
 
         when(ollamaService.generateExplanation(anyString()))
-                .thenThrow(new RuntimeException("Ollama unavailable"));
+                .thenThrow(
+                        new RuntimeException("Ollama unavailable")
+                );
 
         AiChatController.ChatRequest request =
                 new AiChatController.ChatRequest(
@@ -198,6 +233,8 @@ class AiChatControllerTest {
                 response.getStatusCode()
         );
     }
+
+    // TEST 7: Invented method warning
 
     @Test
     void inventedMethodProducesVisibleWarning() {
@@ -216,7 +253,10 @@ class AiChatControllerTest {
 
         ResponseEntity<?> response = controller.chat(request);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode()
+        );
 
         String answer = extractAnswer(response);
 
@@ -225,9 +265,13 @@ class AiChatControllerTest {
         );
 
         assertTrue(
-                answer.contains("demo.PaymentService.refundPayment()")
+                answer.contains(
+                        "demo.PaymentService.refundPayment()"
+                )
         );
     }
+
+    // TEST 8: Verified method
 
     @Test
     void verifiedMethodDoesNotProduceWarning() {
@@ -246,7 +290,10 @@ class AiChatControllerTest {
 
         ResponseEntity<?> response = controller.chat(request);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode()
+        );
 
         String answer = extractAnswer(response);
 
@@ -254,6 +301,8 @@ class AiChatControllerTest {
                 answer.contains("Unverified Method References")
         );
     }
+
+    // TEST 9: Multiple invented methods
 
     @Test
     void multipleInventedMethodsProduceWarnings() {
@@ -273,28 +322,231 @@ class AiChatControllerTest {
 
         ResponseEntity<?> response = controller.chat(request);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode()
+        );
 
         String answer = extractAnswer(response);
 
         assertTrue(
-                answer.contains("demo.PaymentService.refundPayment()")
+                answer.contains(
+                        "demo.PaymentService.refundPayment()"
+                )
         );
 
         assertTrue(
-                answer.contains("demo.OrderController.deleteOrder()")
+                answer.contains(
+                        "demo.OrderController.deleteOrder()"
+                )
         );
     }
 
+    // TEST 10: Existing method question
+
+    @Test
+    void existingMethodQuestionUsesVerifiedData() {
+
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "Does OrderController have checkout()?",
+                        dependencies,
+                        classMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
+        String answer = extractAnswer(response);
+
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode()
+        );
+
+        assertTrue(
+                answer.contains("demo.OrderController")
+        );
+
+        assertTrue(
+                answer.contains("checkout()")
+        );
+
+        assertTrue(
+                answer.contains("declared")
+        );
+
+        verifyNoInteractions(ollamaService);
+    }
+
+    // TEST 11: Missing method question
+
+    @Test
+    void missingMethodQuestionUsesVerifiedData() {
+
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "Does OrderController have deleteOrder()?",
+                        dependencies,
+                        classMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
+        String answer = extractAnswer(response);
+
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode()
+        );
+
+        assertTrue(
+                answer.contains("demo.OrderController")
+        );
+
+        assertTrue(
+                answer.contains("deleteOrder()")
+        );
+
+        assertTrue(
+                answer.contains("not listed")
+        );
+
+        assertTrue(
+                answer.contains("checkout()")
+        );
+
+        verifyNoInteractions(ollamaService);
+    }
+
+    // TEST 12: Method information unavailable
+
+    @Test
+    void missingMethodInformationIsNotTreatedAsAbsence() {
+
+        Map<String, List<String>> incompleteMethods =
+                Map.of(
+                        "demo.PaymentService",
+                        List.of("processPayment")
+                );
+
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "Does OrderController have deleteOrder()?",
+                        dependencies,
+                        incompleteMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
+        String answer = extractAnswer(response);
+
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode()
+        );
+
+        assertTrue(
+                answer.contains("unavailable")
+        );
+
+        assertFalse(
+                answer.contains("does not declare")
+        );
+
+        verifyNoInteractions(ollamaService);
+    }
+
+    // TEST 13: Multiple method questions
+
+    @Test
+    void multipleMethodQuestionUsesVerifiedData() {
+
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "Does PaymentService have refundPayment(), "
+                                + "and does OrderController have deleteOrder()?",
+                        dependencies,
+                        classMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
+        String answer = extractAnswer(response);
+
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode()
+        );
+
+        assertTrue(
+                answer.contains("demo.PaymentService")
+        );
+
+        assertTrue(
+                answer.contains("refundPayment()")
+        );
+
+        assertTrue(
+                answer.contains("demo.OrderController")
+        );
+
+        assertTrue(
+                answer.contains("deleteOrder()")
+        );
+
+        verifyNoInteractions(ollamaService);
+    }
+
+    // TEST 14: General impact question still uses Ollama
+
+    @Test
+    void generalImpactQuestionStillUsesOllama() {
+
+        when(ollamaService.generateExplanation(anyString()))
+                .thenReturn("Review dependent classes.");
+
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "What happens if PaymentService changes?",
+                        dependencies,
+                        classMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
+        String answer = extractAnswer(response);
+
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode()
+        );
+
+        assertTrue(
+                answer.contains("Review dependent classes.")
+        );
+
+        verify(ollamaService)
+                .generateExplanation(anyString());
+    }
+
+    // Helper method
+
     private String extractAnswer(ResponseEntity<?> response) {
 
-        assertInstanceOf(Map.class, response.getBody());
+        assertInstanceOf(
+                Map.class,
+                response.getBody()
+        );
 
-        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        Map<?, ?> body =
+                (Map<?, ?>) response.getBody();
 
         Object answer = body.get("answer");
 
-        assertInstanceOf(String.class, answer);
+        assertInstanceOf(
+                String.class,
+                answer
+        );
 
         return (String) answer;
     }
