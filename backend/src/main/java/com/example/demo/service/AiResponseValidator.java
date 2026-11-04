@@ -29,6 +29,41 @@ public class AiResponseValidator {
             "getClass", "wait", "notify", "notifyAll"
     );
 
+    /*
+     * These patterns recognize common ways the AI says
+     * a method is absent or has not been verified.
+     *
+     * This is heuristic language analysis, not a full
+     * natural-language understanding system.
+     */
+    private static final List<Pattern> NEGATIVE_PATTERNS = List.of(
+            Pattern.compile(
+                    "\\b(?:does\\s+not|doesn't|do\\s+not|don't)"
+                            + "\\s+(?:appear\\s+to\\s+)?"
+                            + "(?:have|contain|define|declare|include|implement)\\b",
+                    Pattern.CASE_INSENSITIVE
+            ),
+            Pattern.compile(
+                    "\\b(?:has\\s+no|have\\s+no|contains\\s+no)\\b",
+                    Pattern.CASE_INSENSITIVE
+            ),
+            Pattern.compile(
+                    "\\b(?:not|never)\\s+"
+                            + "(?:found|defined|declared|implemented|present|available)\\b",
+                    Pattern.CASE_INSENSITIVE
+            ),
+            Pattern.compile(
+                    "\\b(?:cannot|can't|could\\s+not|couldn't)"
+                            + "\\s+(?:find|verify|confirm|identify)\\b",
+                    Pattern.CASE_INSENSITIVE
+            ),
+            Pattern.compile(
+                    "\\b(?:no\\s+evidence\\s+of|"
+                            + "no\\s+such\\s+method)\\b",
+                    Pattern.CASE_INSENSITIVE
+            )
+    );
+
     public List<String> findUnverifiedMethods(
             String aiAnswer,
             Map<String, List<String>> classMethods) {
@@ -40,37 +75,6 @@ public class AiResponseValidator {
 
         Set<String> warnings = new TreeSet<>();
 
-        // Check explicit ClassName.method() references.
-        Matcher qualifiedMatcher =
-                QUALIFIED_METHOD.matcher(aiAnswer);
-
-        while (qualifiedMatcher.find()) {
-
-            String classReference = qualifiedMatcher.group(1);
-            String methodName = qualifiedMatcher.group(2);
-
-            for (String verifiedClass : classMethods.keySet()) {
-
-                String simpleName = simpleName(verifiedClass);
-
-                if (!verifiedClass.equals(classReference)
-                        && !simpleName.equals(classReference)) {
-                    continue;
-                }
-
-                if (!isDeclared(methodName,
-                        classMethods.get(verifiedClass))) {
-
-                    warnings.add(
-                            verifiedClass + "." + methodName + "()"
-                    );
-                }
-            }
-        }
-
-        // Check unqualified method references only when
-        // the surrounding sentence explicitly names one
-        // project class.
         String[] sentences =
                 aiAnswer.split("(?<=[.!?])\\s+|\\R+");
 
@@ -80,36 +84,64 @@ public class AiResponseValidator {
                 continue;
             }
 
-            List<String> mentionedClasses =
-                    findMentionedClasses(sentence, classMethods);
+            validateSentence(
+                    sentence,
+                    classMethods,
+                    warnings
+            );
+        }
 
-            // Ambiguous class context: do not guess.
-            if (mentionedClasses.size() != 1) {
-                continue;
-            }
+        return new ArrayList<>(warnings);
+    }
 
-            String verifiedClass = mentionedClasses.get(0);
+    private void validateSentence(
+            String sentence,
+            Map<String, List<String>> classMethods,
+            Set<String> warnings) {
 
-            Matcher unqualifiedMatcher =
-                    UNQUALIFIED_METHOD.matcher(sentence);
+        /*
+         * Ignore sentences that clearly deny or cannot
+         * verify method existence.
+         *
+         * We do not want to warn when the AI is already
+         * communicating uncertainty or absence.
+         */
+        if (isNegativeMethodStatement(sentence)) {
+            return;
+        }
 
-            while (unqualifiedMatcher.find()) {
+        validateQualifiedMethods(
+                sentence,
+                classMethods,
+                warnings
+        );
 
-                String methodName = unqualifiedMatcher.group(1);
+        validateUnqualifiedMethods(
+                sentence,
+                classMethods,
+                warnings
+        );
+    }
 
-                if (IGNORED_NAMES.contains(methodName)) {
-                    continue;
-                }
+    private void validateQualifiedMethods(
+            String sentence,
+            Map<String, List<String>> classMethods,
+            Set<String> warnings) {
 
-                // Qualified references are already checked.
-                int start = unqualifiedMatcher.start(1);
+        Matcher matcher =
+                QUALIFIED_METHOD.matcher(sentence);
 
-                if (start > 0 && sentence.charAt(start - 1) == '.') {
-                    continue;
-                }
+        while (matcher.find()) {
 
-                // A class constructor is not a method.
-                if (methodName.equals(simpleName(verifiedClass))) {
+            String classReference = matcher.group(1);
+            String methodName = matcher.group(2);
+
+            for (String verifiedClass : classMethods.keySet()) {
+
+                String simpleName = simpleName(verifiedClass);
+
+                if (!verifiedClass.equals(classReference)
+                        && !simpleName.equals(classReference)) {
                     continue;
                 }
 
@@ -123,8 +155,68 @@ public class AiResponseValidator {
                 }
             }
         }
+    }
 
-        return new ArrayList<>(warnings);
+    private void validateUnqualifiedMethods(
+            String sentence,
+            Map<String, List<String>> classMethods,
+            Set<String> warnings) {
+
+        List<String> mentionedClasses =
+                findMentionedClasses(sentence, classMethods);
+
+        // Do not guess when multiple classes are mentioned.
+        if (mentionedClasses.size() != 1) {
+            return;
+        }
+
+        String verifiedClass = mentionedClasses.get(0);
+
+        Matcher matcher =
+                UNQUALIFIED_METHOD.matcher(sentence);
+
+        while (matcher.find()) {
+
+            String methodName = matcher.group(1);
+
+            if (IGNORED_NAMES.contains(methodName)) {
+                continue;
+            }
+
+            int start = matcher.start(1);
+
+            // Qualified references were already handled.
+            if (start > 0
+                    && sentence.charAt(start - 1) == '.') {
+                continue;
+            }
+
+            // Do not treat constructors as methods.
+            if (methodName.equals(simpleName(verifiedClass))) {
+                continue;
+            }
+
+            if (!isDeclared(
+                    methodName,
+                    classMethods.get(verifiedClass))) {
+
+                warnings.add(
+                        verifiedClass + "." + methodName + "()"
+                );
+            }
+        }
+    }
+
+    private boolean isNegativeMethodStatement(String sentence) {
+
+        for (Pattern pattern : NEGATIVE_PATTERNS) {
+
+            if (pattern.matcher(sentence).find()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private boolean isDeclared(

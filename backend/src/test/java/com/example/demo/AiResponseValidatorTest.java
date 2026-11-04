@@ -14,12 +14,10 @@ import static org.junit.jupiter.api.Assertions.*;
 class AiResponseValidatorTest {
 
     private AiResponseValidator validator;
-
     private Map<String, List<String>> classMethods;
 
     @BeforeEach
     void setUp() {
-
         validator = new AiResponseValidator();
 
         classMethods = Map.of(
@@ -31,184 +29,103 @@ class AiResponseValidatorTest {
 
     @Test
     void verifiedQualifiedMethodProducesNoWarning() {
-
-        String answer =
-                "Call PaymentService.processPayment() to process payments.";
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertTrue(warnings.isEmpty());
+        assertNoWarnings(
+                "Call PaymentService.processPayment() to process payments."
+        );
     }
 
     @Test
     void inventedQualifiedMethodProducesWarning() {
-
-        String answer =
-                "Call PaymentService.refundPayment() to issue refunds.";
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertEquals(
-                List.of("demo.PaymentService.refundPayment()"),
-                warnings
+        assertWarnings(
+                "Call PaymentService.refundPayment() to issue refunds.",
+                "demo.PaymentService.refundPayment()"
         );
     }
 
     @Test
     void fullyQualifiedClassNameIsSupported() {
-
-        String answer =
-                "Call demo.PaymentService.refundPayment() to issue refunds.";
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertEquals(
-                List.of("demo.PaymentService.refundPayment()"),
-                warnings
+        assertWarnings(
+                "Call demo.PaymentService.refundPayment() to issue refunds.",
+                "demo.PaymentService.refundPayment()"
         );
     }
 
     @Test
     void inventedUnqualifiedMethodWithClassContextProducesWarning() {
-
-        String answer =
-                "PaymentService has a refundPayment() method.";
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertEquals(
-                List.of("demo.PaymentService.refundPayment()"),
-                warnings
+        assertWarnings(
+                "PaymentService has a refundPayment() method.",
+                "demo.PaymentService.refundPayment()"
         );
     }
 
     @Test
     void verifiedUnqualifiedMethodWithClassContextProducesNoWarning() {
-
-        String answer =
-                "OrderService uses placeOrder().";
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertTrue(warnings.isEmpty());
+        assertNoWarnings("OrderService uses placeOrder().");
     }
 
     @Test
     void unqualifiedMethodWithoutClassContextIsIgnored() {
-
-        String answer =
-                "Call refundPayment() to issue a refund.";
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertTrue(warnings.isEmpty());
+        assertNoWarnings("Call refundPayment() to issue a refund.");
     }
 
     @Test
     void ambiguousClassContextIsIgnoredForUnqualifiedMethods() {
-
-        String answer =
-                "PaymentService and OrderService may call refundPayment().";
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertTrue(warnings.isEmpty());
+        assertNoWarnings(
+                "PaymentService and OrderService may call refundPayment()."
+        );
     }
 
     @Test
     void multipleInventedQualifiedMethodsProduceWarnings() {
-
-        String answer = """
+        assertWarnings(
+                """
                 PaymentService.refundPayment() handles refunds.
                 OrderController.deleteOrder() deletes orders.
-                """;
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertEquals(
-                List.of(
-                        "demo.OrderController.deleteOrder()",
-                        "demo.PaymentService.refundPayment()"
-                ),
-                warnings
+                """,
+                "demo.OrderController.deleteOrder()",
+                "demo.PaymentService.refundPayment()"
         );
     }
 
     @Test
     void duplicateReferencesProduceOneWarning() {
-
-        String answer = """
+        assertWarnings(
+                """
                 PaymentService.refundPayment() handles refunds.
                 PaymentService.refundPayment() should be tested.
-                """;
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertEquals(
-                List.of("demo.PaymentService.refundPayment()"),
-                warnings
+                """,
+                "demo.PaymentService.refundPayment()"
         );
     }
 
     @Test
     void commonJavaMethodsAreIgnoredWhenUnqualified() {
-
-        String answer =
-                "PaymentService may use toString() or equals().";
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertTrue(warnings.isEmpty());
-    }
-
-    @Test
-    void constructorReferenceIsNotFlagged() {
-
-        String answer =
-                "PaymentService creates a new PaymentService().";
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertTrue(warnings.isEmpty());
-    }
-
-    @Test
-    void unrelatedQualifiedMethodIsIgnored() {
-
-        String answer =
-                "Call external.Logger.log() to record the result.";
-
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
-
-        assertTrue(warnings.isEmpty());
-    }
-
-    @Test
-    void blankAnswerProducesNoWarnings() {
-
-        assertTrue(
-                validator.findUnverifiedMethods(
-                        "   ",
-                        classMethods
-                ).isEmpty()
+        assertNoWarnings(
+                "PaymentService may use toString() or equals()."
         );
     }
 
     @Test
-    void missingMethodContextProducesNoWarnings() {
+    void constructorReferenceIsNotFlagged() {
+        assertNoWarnings(
+                "PaymentService creates a new PaymentService()."
+        );
+    }
 
+    @Test
+    void unrelatedQualifiedMethodIsIgnored() {
+        assertNoWarnings(
+                "Call external.Logger.log() to record the result."
+        );
+    }
+
+    @Test
+    void blankAnswerProducesNoWarnings() {
+        assertNoWarnings("   ");
+    }
+
+    @Test
+    void missingMethodContextProducesNoWarnings() {
         assertTrue(
                 validator.findUnverifiedMethods(
                         "PaymentService.refundPayment()",
@@ -219,13 +136,100 @@ class AiResponseValidatorTest {
 
     @Test
     void ordinaryExplanationProducesNoWarnings() {
+        assertNoWarnings(
+                "Changes to PaymentService may affect OrderService."
+        );
+    }
 
-        String answer =
-                "Changes to PaymentService may affect OrderService.";
+    // New tests: negative statements
 
-        List<String> warnings =
-                validator.findUnverifiedMethods(answer, classMethods);
+    @Test
+    void doesNotHaveMethodProducesNoWarning() {
+        assertNoWarnings(
+                "No, PaymentService does not have a refundPayment() method."
+        );
+    }
 
-        assertTrue(warnings.isEmpty());
+    @Test
+    void doesntDeclareMethodProducesNoWarning() {
+        assertNoWarnings(
+                "PaymentService doesn't declare refundPayment()."
+        );
+    }
+
+    @Test
+    void methodNotFoundProducesNoWarning() {
+        assertNoWarnings(
+                "PaymentService.refundPayment() was not found."
+        );
+    }
+
+    @Test
+    void cannotVerifyMethodProducesNoWarning() {
+        assertNoWarnings(
+                "I cannot verify PaymentService.refundPayment()."
+        );
+    }
+
+    @Test
+    void noSuchMethodProducesNoWarning() {
+        assertNoWarnings(
+                "There is no such method as PaymentService.refundPayment()."
+        );
+    }
+
+    @Test
+    void separatePositiveAndNegativeSentencesAreHandled() {
+        assertWarnings(
+                """
+                PaymentService does not have refundPayment().
+                OrderController.deleteOrder() deletes orders.
+                """,
+                "demo.OrderController.deleteOrder()"
+        );
+    }
+
+    @Test
+    void positiveClaimStillProducesWarning() {
+        assertWarnings(
+                "PaymentService definitely implements refundPayment().",
+                "demo.PaymentService.refundPayment()"
+        );
+    }
+
+    /*
+     * Known limitation:
+     * A negative phrase can suppress validation of an
+     * unrelated positive claim within the same sentence.
+     *
+     * We'll address this with more precise claim-level
+     * validation in the next refinement.
+     */
+
+    private void assertNoWarnings(String answer) {
+        assertTrue(
+                validator.findUnverifiedMethods(
+                        answer,
+                        classMethods
+                ).isEmpty(),
+                "Unexpected warnings for: " + answer
+        );
+    }
+
+    private void assertWarnings(
+            String answer,
+            String... expectedWarnings) {
+
+        List<String> actual =
+                validator.findUnverifiedMethods(
+                        answer,
+                        classMethods
+                );
+
+        assertEquals(
+                List.of(expectedWarnings),
+                actual,
+                "Incorrect warnings for: " + answer
+        );
     }
 }
