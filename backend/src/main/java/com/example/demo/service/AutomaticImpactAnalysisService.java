@@ -9,7 +9,13 @@ import com.github.javaparser.ast.type.ClassOrInterfaceType;
 
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 public class AutomaticImpactAnalysisService {
@@ -49,9 +55,7 @@ public class AutomaticImpactAnalysisService {
             }
 
             try {
-                parsedFiles.add(
-                        StaticJavaParser.parse(sourceCode)
-                );
+                parsedFiles.add(StaticJavaParser.parse(sourceCode));
             } catch (RuntimeException exception) {
                 throw new IllegalArgumentException(
                         "Unable to parse source file: "
@@ -61,7 +65,7 @@ public class AutomaticImpactAnalysisService {
             }
         }
 
-        // Step 2: Collect fully qualified project class names.
+        // Step 2: Collect project classes by qualified name.
         Set<String> projectClasses = new LinkedHashSet<>();
 
         Map<String, Set<String>> classesBySimpleName =
@@ -85,7 +89,7 @@ public class AutomaticImpactAnalysisService {
             }
         }
 
-        // Step 3: Build package-aware dependencies.
+        // Step 3: Build the dependency graph.
         Map<String, List<String>> dependencies =
                 new LinkedHashMap<>();
 
@@ -98,22 +102,30 @@ public class AutomaticImpactAnalysisService {
             Map<String, String> explicitImports =
                     new LinkedHashMap<>();
 
+            List<String> wildcardImports = new ArrayList<>();
+
             for (ImportDeclaration importDeclaration :
                     unit.getImports()) {
 
-                if (importDeclaration.isAsterisk()
-                        || importDeclaration.isStatic()) {
+                if (importDeclaration.isStatic()) {
                     continue;
                 }
 
                 String importedName =
                         importDeclaration.getNameAsString();
 
-                String simpleName = importedName.substring(
-                        importedName.lastIndexOf('.') + 1
-                );
+                if (importDeclaration.isAsterisk()) {
+                    wildcardImports.add(importedName);
+                } else {
+                    String simpleName = importedName.substring(
+                            importedName.lastIndexOf('.') + 1
+                    );
 
-                explicitImports.put(simpleName, importedName);
+                    explicitImports.put(
+                            simpleName,
+                            importedName
+                    );
+                }
             }
 
             for (ClassOrInterfaceDeclaration declaration :
@@ -125,8 +137,7 @@ public class AutomaticImpactAnalysisService {
                         new LinkedHashSet<>();
 
                 for (ClassOrInterfaceType type :
-                        declaration.findAll(
-                                ClassOrInterfaceType.class)) {
+                        declaration.findAll(ClassOrInterfaceType.class)) {
 
                     String typeName = type.getNameAsString();
 
@@ -134,6 +145,7 @@ public class AutomaticImpactAnalysisService {
                             typeName,
                             packageName,
                             explicitImports,
+                            wildcardImports,
                             projectClasses,
                             classesBySimpleName
                     );
@@ -186,9 +198,7 @@ public class AutomaticImpactAnalysisService {
                         dependencies
                 );
 
-        // Step 6: Preserve response field structure.
         Map<String, Object> result = new LinkedHashMap<>();
-
         result.put("dependencies", dependencies);
         result.putAll(impact);
 
@@ -206,6 +216,7 @@ public class AutomaticImpactAnalysisService {
             String typeName,
             String packageName,
             Map<String, String> explicitImports,
+            List<String> wildcardImports,
             Set<String> projectClasses,
             Map<String, Set<String>> classesBySimpleName) {
 
@@ -214,7 +225,7 @@ public class AutomaticImpactAnalysisService {
             return typeName;
         }
 
-        // Explicit import.
+        // Explicit import takes priority.
         String importedName = explicitImports.get(typeName);
 
         if (importedName != null) {
@@ -223,7 +234,7 @@ public class AutomaticImpactAnalysisService {
                     : null;
         }
 
-        // Class in the same package.
+        // Class declared in the same package.
         String samePackageName = packageName.isEmpty()
                 ? typeName
                 : packageName + "." + typeName;
@@ -232,7 +243,30 @@ public class AutomaticImpactAnalysisService {
             return samePackageName;
         }
 
-        // Resolve only when the name is unambiguous.
+        // Match types in wildcard-imported packages.
+        Set<String> wildcardMatches = new LinkedHashSet<>();
+
+        for (String importedPackage : wildcardImports) {
+
+            String candidate =
+                    importedPackage + "." + typeName;
+
+            if (projectClasses.contains(candidate)) {
+                wildcardMatches.add(candidate);
+            }
+        }
+
+        if (wildcardMatches.size() == 1) {
+            return wildcardMatches.iterator().next();
+        }
+
+        // Multiple wildcard packages contain this class.
+        // Do not guess which one was intended.
+        if (wildcardMatches.size() > 1) {
+            return null;
+        }
+
+        // Backward compatibility for unambiguous names.
         Set<String> matches =
                 classesBySimpleName.getOrDefault(
                         typeName,
