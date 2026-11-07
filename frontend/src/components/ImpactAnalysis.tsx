@@ -1,6 +1,7 @@
 
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import './ImpactAnalysis.css'
 
 type Dependencies = Record<string, string[]>
 
@@ -39,53 +40,22 @@ const sampleDependencies: Dependencies = {
   PaymentService: [],
 }
 
-const riskColors = {
-  LOW: '#22c55e',
-  MEDIUM: '#f59e0b',
-  HIGH: '#ef4444',
-}
-
-const panelStyle = {
-  marginTop: '24px',
-  padding: '24px',
-  background: '#1e293b',
-  border: '1px solid #334155',
-  borderRadius: '12px',
-}
-
-const cardStyle = {
-  padding: '16px',
-  background: '#0f172a',
-  border: '1px solid #334155',
-  borderRadius: '10px',
-}
-
-const gridStyle = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-  gap: '12px',
-  marginTop: '20px',
-}
-
 function calculateImpactDetails(
   changedClass: string,
   dependencies: Dependencies
 ): ImpactDetail[] {
-  const reverseDependencies: Dependencies = {}
+  const reverse: Dependencies = {}
 
   for (const [source, targets] of Object.entries(dependencies)) {
     for (const target of targets) {
-      if (!reverseDependencies[target]) {
-        reverseDependencies[target] = []
-      }
-
-      if (!reverseDependencies[target].includes(source)) {
-        reverseDependencies[target].push(source)
+      if (!reverse[target]) reverse[target] = []
+      if (!reverse[target].includes(source)) {
+        reverse[target].push(source)
       }
     }
   }
 
-  const visited = new Set<string>([changedClass])
+  const visited = new Set([changedClass])
   const queue: ImpactDetail[] = [
     {
       className: changedClass,
@@ -95,13 +65,11 @@ function calculateImpactDetails(
   ]
 
   const results: ImpactDetail[] = []
-  let index = 0
 
-  while (index < queue.length) {
-    const current = queue[index++]
-    const dependents = reverseDependencies[current.className] ?? []
+  for (let index = 0; index < queue.length; index++) {
+    const current = queue[index]
 
-    for (const dependent of dependents) {
+    for (const dependent of reverse[current.className] ?? []) {
       if (visited.has(dependent)) continue
 
       visited.add(dependent)
@@ -127,24 +95,22 @@ function calculateImpactDetails(
 function MetricCard({
   label,
   value,
+  description,
 }: {
   label: string
   value: string | number
+  description?: string
 }) {
   return (
-    <div style={cardStyle}>
-      <div style={{ color: '#94a3b8', fontSize: '13px' }}>
-        {label}
-      </div>
-      <div
-        style={{
-          marginTop: '8px',
-          fontSize: '24px',
-          fontWeight: 700,
-        }}
-      >
-        {value}
-      </div>
+    <div className="impact-metric">
+      <span className="impact-metric-label">{label}</span>
+      <strong className="impact-metric-value">{value}</strong>
+
+      {description && (
+        <span className="impact-metric-description">
+          {description}
+        </span>
+      )}
     </div>
   )
 }
@@ -180,6 +146,14 @@ function ImpactAnalysis({
     onImpactedClasses(0)
   }, [dependencies, onImpactedClasses])
 
+  const resetAnalysis = () => {
+    setResult(null)
+    setError('')
+    setAiExplanation('')
+    setAiError('')
+    onImpactedClasses(0)
+  }
+
   const analyzeImpact = async () => {
     if (!selectedClass) {
       setError('Please select a Java class.')
@@ -187,10 +161,7 @@ function ImpactAnalysis({
     }
 
     setLoading(true)
-    setError('')
-    setResult(null)
-    setAiExplanation('')
-    setAiError('')
+    resetAnalysis()
 
     try {
       const response = await fetch('/api/analyze/impact', {
@@ -209,10 +180,13 @@ function ImpactAnalysis({
       const data: ImpactResult = await response.json()
 
       if (
+        !Array.isArray(data.impactedClasses) ||
+        typeof data.totalImpacted !== 'number' ||
         typeof data.riskScore !== 'number' ||
+        !Number.isFinite(data.riskScore) ||
         !['LOW', 'MEDIUM', 'HIGH'].includes(data.riskLevel)
       ) {
-        throw new Error('Invalid risk scoring response.')
+        throw new Error('Invalid impact analysis response.')
       }
 
       setResult(data)
@@ -274,463 +248,378 @@ function ImpactAnalysis({
     ? calculateImpactDetails(
         result.changedClass,
         activeDependencies
-      ).filter((detail) =>
+      ).filter(detail =>
         result.impactedClasses.includes(detail.className)
       )
     : []
 
-  const directImpacts = impactDetails.filter(
-    (detail) => detail.level === 1
-  )
+  const riskLevel = result?.riskLevel ?? 'LOW'
 
-  const indirectImpacts = impactDetails.filter(
-    (detail) => detail.level > 1
-  )
-
-  const riskColor = result
-    ? riskColors[result.riskLevel]
-    : '#94a3b8'
+  const riskScore = result
+    ? Math.max(0, Math.min(100, result.riskScore))
+    : 0
 
   return (
-    <div>
-      <h2>Java Change Impact Analysis</h2>
+    <section className="impact-dashboard">
+      <div className="impact-heading">
+        <div>
+          <span className="impact-eyebrow">
+            CHANGE INTELLIGENCE
+          </span>
 
-      <p>
-        Discover which Java classes may be affected by a code
-        change and understand how the impact propagates
-        through dependencies.
-      </p>
+          <h2>Change Impact Analysis</h2>
 
-      <p style={{ color: '#94a3b8', marginTop: '12px' }}>
-        {dependencies
-          ? 'Using classes from your uploaded Java project.'
-          : 'No uploaded project found. Using sample classes.'}
-      </p>
+          <p>
+            Understand how changes to a Java class may affect
+            other classes across your project.
+          </p>
+        </div>
 
-      <div style={{ ...panelStyle, background: '#0b1120' }}>
-        <label
-          htmlFor="changed-class"
-          style={{
-            display: 'block',
-            marginBottom: '12px',
-            fontWeight: 600,
-          }}
-        >
-          Select the Class You Want to Change
-        </label>
+        <span className="impact-source">
+          {dependencies ? 'Uploaded Project' : 'Sample Project'}
+        </span>
+      </div>
 
-        <select
-          id="changed-class"
-          value={selectedClass}
-          onChange={(event) => {
-            setSelectedClass(event.target.value)
-            setResult(null)
-            setError('')
-            setAiExplanation('')
-            setAiError('')
-            onImpactedClasses(0)
-          }}
-          style={{
-            width: '100%',
-            padding: '12px',
-            background: '#1e293b',
-            color: '#f8fafc',
-            border: '1px solid #475569',
-            borderRadius: '8px',
-          }}
-        >
-          <option value="">-- Select Java Class --</option>
+      <div className="impact-panel impact-selector-panel">
+        <div className="impact-section-heading">
+          <div>
+            <h3>Select a Java Class</h3>
+            <p>Choose the class you plan to modify.</p>
+          </div>
 
-          {classNames.map((className) => (
-            <option key={className} value={className}>
-              {className}
-            </option>
-          ))}
-        </select>
+          <span className="impact-class-count">
+            {classNames.length} classes available
+          </span>
+        </div>
 
-        <button
-          type="button"
-          onClick={analyzeImpact}
-          disabled={loading || aiLoading || !selectedClass}
-          style={{
-            marginTop: '20px',
-            padding: '12px 24px',
-            background: '#2563eb',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: loading ? 'wait' : 'pointer',
-            opacity: loading || aiLoading || !selectedClass ? 0.6 : 1,
-          }}
-        >
-          {loading
-            ? 'Analyzing Impact...'
-            : 'Generate Impact Analysis'}
-        </button>
+        <div className="impact-selector-row">
+          <select
+            id="changed-class"
+            aria-label="Select Java class to analyze"
+            value={selectedClass}
+            disabled={loading || aiLoading}
+            onChange={event => {
+              setSelectedClass(event.target.value)
+              resetAnalysis()
+            }}
+          >
+            <option value="">Select a Java class...</option>
+
+            {classNames.map(className => (
+              <option key={className} value={className}>
+                {className}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            className="impact-button impact-button-primary"
+            onClick={analyzeImpact}
+            disabled={!selectedClass || loading || aiLoading}
+          >
+            {loading ? 'Analyzing...' : 'Analyze Impact'}
+          </button>
+        </div>
+
+        <p className="impact-hint">
+          Analysis identifies potential downstream effects
+          using class dependency relationships.
+        </p>
       </div>
 
       {error && (
-        <p style={{ color: '#f87171', marginTop: '20px' }}>
+        <div className="impact-alert" role="alert">
           {error}
-        </p>
+        </div>
+      )}
+
+      {!result && !loading && (
+        <div className="impact-empty">
+          <div className="impact-empty-icon">◎</div>
+
+          <h3>Ready to analyze your code</h3>
+
+          <p>
+            Select a class and run an impact analysis to see
+            affected classes, dependency paths, and risk metrics.
+          </p>
+        </div>
+      )}
+
+      {loading && (
+        <div className="impact-empty" role="status">
+          <h3>Analyzing dependencies...</h3>
+          <p>Calculating affected classes and structural risk.</p>
+        </div>
       )}
 
       {result && (
-        <div style={panelStyle}>
-          <h3>Impact Analysis Results</h3>
-
-          <p>
-            Changed Class: <strong>{result.changedClass}</strong>
-          </p>
-
-          <div style={gridStyle}>
-            <MetricCard
-              label="Total Impacted"
-              value={result.totalImpacted}
-            />
-            <MetricCard
-              label="Direct Impact"
-              value={directImpacts.length}
-            />
-            <MetricCard
-              label="Indirect Impact"
-              value={indirectImpacts.length}
-            />
-          </div>
-
-          <div style={{ ...panelStyle, background: '#0f172a' }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '12px',
-              }}
-            >
-              <h3 style={{ margin: 0 }}>
-                Change Risk Assessment
-              </h3>
-
-              <span
-                style={{
-                  color: riskColor,
-                  background: `${riskColor}20`,
-                  border: `1px solid ${riskColor}`,
-                  padding: '6px 12px',
-                  borderRadius: '20px',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                }}
-              >
-                {result.riskLevel} RISK
+        <>
+          <div className="impact-result-header">
+            <div>
+              <span className="impact-eyebrow">
+                ANALYSIS RESULTS
               </span>
+
+              <h3>{result.changedClass}</h3>
+
+              <p>
+                Selected class for change-impact assessment
+              </p>
             </div>
-
-            <div style={{ marginTop: '20px' }}>
-              <strong
-                style={{
-                  fontSize: '40px',
-                  color: riskColor,
-                }}
-              >
-                {result.riskScore}/100
-              </strong>
-
-              <span
-                style={{
-                  marginLeft: '10px',
-                  color: '#94a3b8',
-                  fontSize: '13px',
-                }}
-              >
-                Structural risk score
-              </span>
-            </div>
-
-            <div
-              role="progressbar"
-              aria-label="Change risk score"
-              aria-valuenow={result.riskScore}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              style={{
-                width: '100%',
-                height: '12px',
-                background: '#334155',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                marginTop: '16px',
-              }}
-            >
-              <div
-                style={{
-                  width: `${Math.max(
-                    0,
-                    Math.min(100, result.riskScore)
-                  )}%`,
-                  height: '100%',
-                  background: riskColor,
-                  borderRadius: '8px',
-                }}
-              />
-            </div>
-
-            <div style={gridStyle}>
-              <MetricCard
-                label="Direct Impact"
-                value={result.directImpact}
-              />
-              <MetricCard
-                label="Indirect Impact"
-                value={result.indirectImpact}
-              />
-              <MetricCard
-                label="Maximum Depth"
-                value={result.maxDepth}
-              />
-              <MetricCard
-                label="Project Reach"
-                value={`${result.projectReach.toFixed(2)}%`}
-              />
-            </div>
-
-            <p
-              style={{
-                marginTop: '20px',
-                color: '#94a3b8',
-                fontSize: '13px',
-                lineHeight: 1.6,
-              }}
-            >
-              This heuristic score measures structural dependency
-              exposure. It does not predict the probability of a
-              bug or guarantee that affected classes will fail.
-            </p>
-          </div>
-
-          <h4 style={{ marginTop: '24px' }}>
-            Potentially Affected Classes
-          </h4>
-
-          {result.impactedClasses.length === 0 ? (
-            <p>
-              No other uploaded classes depend on this class.
-            </p>
-          ) : (
-            impactDetails.map((detail) => (
-              <div
-                key={detail.className}
-                style={{
-                  ...cardStyle,
-                  marginTop: '12px',
-                  overflowWrap: 'anywhere',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: '12px',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <strong>{detail.className}</strong>
-
-                  <span
-                    style={{
-                      color:
-                        detail.level === 1
-                          ? '#38bdf8'
-                          : '#fbbf24',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                    }}
-                  >
-                    {detail.level === 1
-                      ? 'Direct Impact'
-                      : 'Indirect Impact'}
-                  </span>
-                </div>
-
-                <p
-                  style={{
-                    color: '#94a3b8',
-                    fontSize: '13px',
-                    marginTop: '10px',
-                  }}
-                >
-                  Dependency distance: {detail.level}{' '}
-                  {detail.level === 1 ? 'step' : 'steps'}
-                </p>
-
-                <div
-                  style={{
-                    marginTop: '12px',
-                    padding: '12px',
-                    background: '#1e293b',
-                    borderRadius: '8px',
-                    color: '#cbd5e1',
-                    fontSize: '13px',
-                    lineHeight: 1.8,
-                  }}
-                >
-                  <strong>Impact path:</strong>
-                  <div style={{ marginTop: '6px' }}>
-                    {detail.path.join(' → ')}
-                  </div>
-                </div>
-
-                <p
-                  style={{
-                    marginTop: '12px',
-                    color: '#cbd5e1',
-                    fontSize: '13px',
-                  }}
-                >
-                  {detail.level === 1
-                    ? `${detail.className} directly depends on the changed class and may require testing.`
-                    : `${detail.className} depends on another potentially affected class and may require regression testing.`}
-                </p>
-              </div>
-            ))
-          )}
-
-          {impactDetails.length !==
-            result.impactedClasses.length && (
-            <p
-              style={{
-                marginTop: '16px',
-                color: '#fbbf24',
-              }}
-            >
-              Some backend-reported impacts could not be
-              matched to a dependency path.
-            </p>
-          )}
-
-          <p
-            style={{
-              marginTop: '20px',
-              color: '#94a3b8',
-              fontSize: '13px',
-            }}
-          >
-            Note: These results represent potential
-            dependency-based impacts, not confirmed bugs.
-          </p>
-
-          <div
-            style={{
-              ...panelStyle,
-              background: '#0f172a',
-              borderColor: '#475569',
-            }}
-          >
-            <h3>AI-Powered Impact Explanation</h3>
-
-            <p
-              style={{
-                color: '#cbd5e1',
-                lineHeight: 1.7,
-              }}
-            >
-              Ask your local Qwen2.5-Coder model to explain
-              the dependency impact, structural risk, and
-              recommended regression tests.
-            </p>
 
             <button
               type="button"
-              onClick={generateAiExplanation}
-              disabled={aiLoading || loading}
-              style={{
-                marginTop: '12px',
-                padding: '12px 24px',
-                background: '#7c3aed',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: aiLoading ? 'wait' : 'pointer',
-                opacity: aiLoading ? 0.6 : 1,
+              className="impact-button impact-button-secondary"
+              onClick={() => {
+                setSelectedClass('')
+                resetAnalysis()
               }}
             >
+              Reset Analysis
+            </button>
+          </div>
+
+          <div className="impact-metrics-grid">
+            <MetricCard
+              label="Total Impacted"
+              value={result.totalImpacted}
+              description="Potentially affected classes"
+            />
+
+            <MetricCard
+              label="Direct Impact"
+              value={result.directImpact}
+              description="Immediate dependents"
+            />
+
+            <MetricCard
+              label="Indirect Impact"
+              value={result.indirectImpact}
+              description="Transitive dependents"
+            />
+
+            <MetricCard
+              label="Maximum Depth"
+              value={result.maxDepth}
+              description="Dependency propagation steps"
+            />
+          </div>
+
+          <div className="impact-risk-grid">
+            <div className="impact-panel">
+              <div className="impact-section-heading">
+                <div>
+                  <h3>Structural Risk Assessment</h3>
+                  <p>Dependency exposure heuristic</p>
+                </div>
+
+                <span
+                  className={`impact-risk-badge ${riskLevel.toLowerCase()}`}
+                >
+                  {riskLevel} RISK
+                </span>
+              </div>
+
+              <div className="impact-risk-score">
+                <strong>{result.riskScore}</strong>
+                <span>/ 100</span>
+              </div>
+
+              <div
+                className="impact-risk-track"
+                role="progressbar"
+                aria-label="Structural risk score"
+                aria-valuenow={riskScore}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className={`impact-risk-fill ${riskLevel.toLowerCase()}`}
+                  style={{ width: `${riskScore}%` }}
+                />
+              </div>
+
+              <p className="impact-risk-note">
+                This score measures structural dependency exposure.
+                It does not predict the probability of a bug.
+              </p>
+            </div>
+
+            <div className="impact-panel impact-reach-panel">
+              <h3>Project Reach</h3>
+
+              <p>
+                Share of project classes potentially affected
+              </p>
+
+              <div className="impact-reach-value">
+                {result.projectReach.toFixed(2)}%
+              </div>
+
+              <div className="impact-reach-track">
+                <div
+                  style={{
+                    width: `${Math.max(
+                      0,
+                      Math.min(100, result.projectReach)
+                    )}%`,
+                  }}
+                />
+              </div>
+
+              <p className="impact-risk-note">
+                Based on the class dependency graph provided
+                to the analysis engine.
+              </p>
+            </div>
+          </div>
+
+          <div className="impact-panel">
+            <div className="impact-section-heading">
+              <div>
+                <h3>Potentially Affected Classes</h3>
+
+                <p>
+                  Explore the dependency paths that propagate
+                  changes through your project.
+                </p>
+              </div>
+
+              <span className="impact-class-count">
+                {result.impactedClasses.length} classes
+              </span>
+            </div>
+
+            {result.impactedClasses.length === 0 ? (
+              <div className="impact-no-results">
+                No other classes were reported as depending
+                on this class.
+              </div>
+            ) : (
+              <div className="impact-path-list">
+                {impactDetails.map(detail => (
+                  <div
+                    className="impact-path-card"
+                    key={detail.className}
+                  >
+                    <div className="impact-path-top">
+                      <strong>{detail.className}</strong>
+
+                      <span
+                        className={
+                          detail.level === 1
+                            ? 'impact-type direct'
+                            : 'impact-type indirect'
+                        }
+                      >
+                        {detail.level === 1
+                          ? 'Direct Impact'
+                          : 'Indirect Impact'}
+                      </span>
+                    </div>
+
+                    <p>
+                      Dependency distance: {detail.level}{' '}
+                      {detail.level === 1 ? 'step' : 'steps'}
+                    </p>
+
+                    <div className="impact-path">
+                      <span>Impact path</span>
+
+                      <div>
+                        {detail.path.join(' → ')}
+                      </div>
+                    </div>
+
+                    <p className="impact-path-note">
+                      {detail.level === 1
+                        ? 'This class directly depends on the changed class and may require testing.'
+                        : 'This class depends on another potentially affected class and may require regression testing.'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {impactDetails.length !==
+              result.impactedClasses.length && (
+              <p className="impact-warning">
+                Some backend-reported impacts could not be
+                matched to a dependency path.
+              </p>
+            )}
+
+            <p className="impact-disclaimer">
+              These are potential dependency-based impacts,
+              not confirmed software defects.
+            </p>
+          </div>
+
+          <div className="impact-panel impact-ai-panel">
+            <div className="impact-section-heading">
+              <div>
+                <span className="impact-eyebrow">
+                  AI ASSISTANT
+                </span>
+
+                <h3>AI-Powered Impact Explanation</h3>
+
+                <p>
+                  Generate an explanation of dependency impact,
+                  structural risk, and recommended regression tests.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="impact-button impact-button-ai"
+              onClick={generateAiExplanation}
+              disabled={aiLoading || loading}
+            >
               {aiLoading
-                ? 'AI Is Generating Explanation...'
+                ? 'Generating Explanation...'
                 : 'Generate AI Explanation'}
             </button>
 
             {aiLoading && (
-              <p
-                role="status"
-                style={{
-                  color: '#c4b5fd',
-                  marginTop: '16px',
-                }}
-              >
+              <p className="impact-ai-status" role="status">
                 Ollama is analyzing the dependency information.
                 This may take a few seconds.
               </p>
             )}
 
             {aiError && (
-              <p
-                role="alert"
-                style={{
-                  color: '#f87171',
-                  marginTop: '16px',
-                }}
-              >
+              <div className="impact-alert" role="alert">
                 AI request failed: {aiError}
-              </p>
+              </div>
             )}
 
             {aiExplanation && (
-              <div
-                style={{
-                  marginTop: '20px',
-                  padding: '20px',
-                  background: '#1e293b',
-                  border: '1px solid #475569',
-                  borderRadius: '10px',
-                }}
-              >
-                <h4 style={{ marginTop: 0 }}>
+              <div className="impact-ai-response">
+                <h4>
                   AI Analysis and Testing Recommendations
                 </h4>
 
-                <div
-                  style={{
-                    color: '#e2e8f0',
-                    overflowWrap: 'anywhere',
-                    lineHeight: 1.8,
-                    fontSize: '14px',
-                    textAlign: 'left',
-                  }}
-                >
+                <div className="impact-markdown">
                   <ReactMarkdown>
                     {aiExplanation}
                   </ReactMarkdown>
                 </div>
 
-                <p
-                  style={{
-                    color: '#94a3b8',
-                    fontSize: '12px',
-                    marginTop: '20px',
-                  }}
-                >
+                <p className="impact-disclaimer">
                   AI-generated suggestions may be inaccurate.
-                  Verify recommendations against the source code
-                  and existing tests.
+                  Verify recommendations against the source
+                  code and existing tests.
                 </p>
               </div>
             )}
           </div>
-        </div>
+        </>
       )}
-    </div>
+    </section>
   )
 }
 
