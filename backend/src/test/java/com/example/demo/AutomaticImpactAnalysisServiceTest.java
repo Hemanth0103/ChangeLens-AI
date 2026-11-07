@@ -110,4 +110,76 @@ class AutomaticImpactAnalysisServiceTest {
                 0.001
         );
     }
+
+    @Test
+    void shouldDistinguishClassesWithSameNameInDifferentPackages() {
+
+        ChangeImpactService changeImpactService =
+                new ChangeImpactService();
+
+        AutomaticImpactAnalysisService service =
+                new AutomaticImpactAnalysisService(changeImpactService);
+
+        Map<String, String> sourceFiles = Map.of(
+                "payment/PaymentService.java",
+                """
+                package com.example.payment;
+
+                public class PaymentService {
+                    public void processPayment() {}
+                }
+                """,
+
+                "shipping/PaymentService.java",
+                """
+                package com.example.shipping;
+
+                public class PaymentService {
+                    public void arrangeShipping() {}
+                }
+                """,
+
+                "order/OrderService.java",
+                """
+                package com.example.order;
+
+                import com.example.payment.PaymentService;
+
+                public class OrderService {
+                    private PaymentService paymentService;
+                }
+                """
+        );
+
+        Map<String, Object> result = service.analyze(
+                "com.example.payment.PaymentService",
+                sourceFiles
+        );
+
+        @SuppressWarnings("unchecked")
+        Map<String, List<String>> dependencies =
+                (Map<String, List<String>>) result.get("dependencies");
+
+        assertEquals(
+                List.of("com.example.payment.PaymentService"),
+                dependencies.get("com.example.order.OrderService")
+        );
+
+        assertTrue(
+                dependencies.containsKey(
+                        "com.example.shipping.PaymentService"
+                )
+        );
+
+        assertEquals(1, result.get("totalImpacted"));
+
+        @SuppressWarnings("unchecked")
+        List<String> impactedClasses =
+                (List<String>) result.get("impactedClasses");
+
+        assertEquals(
+                List.of("com.example.order.OrderService"),
+                impactedClasses
+        );
+    }
 }
