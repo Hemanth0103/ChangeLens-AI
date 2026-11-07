@@ -255,4 +255,102 @@ void shouldResolveWildcardImportsToCorrectPackage() {
     );
 }
 
+@Test
+void shouldNotGuessBetweenAmbiguousWildcardImports() {
+
+    ChangeImpactService changeImpactService =
+            new ChangeImpactService();
+
+    AutomaticImpactAnalysisService service =
+            new AutomaticImpactAnalysisService(changeImpactService);
+
+    Map<String, String> sourceFiles = Map.of(
+            "payment/PaymentService.java",
+            """
+            package com.example.payment;
+
+            public class PaymentService {}
+            """,
+
+            "shipping/PaymentService.java",
+            """
+            package com.example.shipping;
+
+            public class PaymentService {}
+            """,
+
+            "order/OrderService.java",
+            """
+            package com.example.order;
+
+            import com.example.payment.*;
+            import com.example.shipping.*;
+
+            public class OrderService {
+                private PaymentService service;
+            }
+            """
+    );
+
+    Map<String, Object> result = service.analyze(
+            "com.example.payment.PaymentService",
+            sourceFiles
+    );
+
+    @SuppressWarnings("unchecked")
+    Map<String, List<String>> dependencies =
+            (Map<String, List<String>>) result.get("dependencies");
+
+    assertEquals(
+            List.of(),
+            dependencies.get("com.example.order.OrderService")
+    );
+
+    assertEquals(0, result.get("totalImpacted"));
+}
+
+@Test
+void shouldNotResolveUnimportedClassFromAnotherPackage() {
+
+    ChangeImpactService changeImpactService =
+            new ChangeImpactService();
+
+    AutomaticImpactAnalysisService service =
+            new AutomaticImpactAnalysisService(changeImpactService);
+
+    Map<String, String> sourceFiles = Map.of(
+            "payment/PaymentService.java",
+            """
+            package com.example.payment;
+
+            public class PaymentService {}
+            """,
+
+            "order/OrderService.java",
+            """
+            package com.example.order;
+
+            public class OrderService {
+                private PaymentService service;
+            }
+            """
+    );
+
+    Map<String, Object> result = service.analyze(
+            "com.example.payment.PaymentService",
+            sourceFiles
+    );
+
+    @SuppressWarnings("unchecked")
+    Map<String, List<String>> dependencies =
+            (Map<String, List<String>>) result.get("dependencies");
+
+    assertEquals(
+            List.of(),
+            dependencies.get("com.example.order.OrderService")
+    );
+
+    assertEquals(0, result.get("totalImpacted"));
+}
+
 }
