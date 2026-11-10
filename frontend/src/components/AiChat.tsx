@@ -1,8 +1,11 @@
 
-import { useEffect, useRef, useState, type FormEvent } from 'react'
-
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react'
 import ReactMarkdown from 'react-markdown'
-
 import './AiChat.css'
 
 type DependencyMap = Record<string, string[]>
@@ -23,9 +26,12 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [failedQuestion, setFailedQuestion] = useState('')
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const controllerRef = useRef<AbortController | null>(null)
+  const requestIdRef = useRef(0)
 
   const hasProject =
     dependencies !== undefined &&
@@ -50,10 +56,22 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
   }, [messages, loading])
 
   useEffect(() => {
+    requestIdRef.current += 1
+    controllerRef.current?.abort()
+    controllerRef.current = null
+
     setMessages([])
     setQuestion('')
     setError('')
+    setFailedQuestion('')
     setCopiedIndex(null)
+    setLoading(false)
+
+    return () => {
+      requestIdRef.current += 1
+      controllerRef.current?.abort()
+      controllerRef.current = null
+    }
   }, [dependencies, classMethods])
 
   const copyAnswer = async (content: string, index: number) => {
@@ -65,22 +83,30 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
     }
   }
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    const trimmedQuestion = question.trim()
+  const sendQuestion = async (
+    text: string,
+    isRetry = false
+  ) => {
+    const trimmedQuestion = text.trim()
 
     if (!trimmedQuestion || loading || !hasProject) {
       return
     }
 
-    setMessages((previous) => [
-      ...previous,
-      { role: 'user', content: trimmedQuestion },
-    ])
+    const requestId = ++requestIdRef.current
+    const controller = new AbortController()
+    controllerRef.current = controller
+
+    if (!isRetry) {
+      setMessages((previous) => [
+        ...previous,
+        { role: 'user', content: trimmedQuestion },
+      ])
+    }
 
     setQuestion('')
     setError('')
+    setFailedQuestion('')
     setCopiedIndex(null)
     setLoading(true)
 
@@ -95,42 +121,100 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
           dependencies,
           classMethods: classMethods ?? {},
         }),
+        signal: controller.signal,
       })
 
       if (!response.ok) {
+        if (response.status === 400) {
+          throw new Error(
+            'The AI request was not accepted. Please check your question and try again.'
+          )
+        }
+
+        if (response.status === 404) {
+          throw new Error(
+            'The AI chat service could not be found. Please check the backend configuration.'
+          )
+        }
+
+        if (response.status === 429) {
+          throw new Error(
+            'The AI service is receiving too many requests. Please wait and try again.'
+          )
+        }
+
+        if (response.status >= 500) {
+          throw new Error(
+            'The AI service encountered an error. Please try again. If the issue continues, contact the backend developer.'
+          )
+        }
+
         throw new Error(
-          `AI request failed with status ${response.status}`
+          `The AI request could not be completed (status ${response.status}).`
         )
       }
 
-      const data: { answer?: string } = await response.json()
+      const data: unknown = await response.json()
 
-      if (!data.answer?.trim()) {
-        throw new Error('AI returned an empty response')
+      if (
+        typeof data !== 'object' ||
+        data === null ||
+        !('answer' in data) ||
+        typeof data.answer !== 'string' ||
+        !data.answer.trim()
+      ) {
+        throw new Error(
+          'The AI service returned an empty or invalid response. Please try again.'
+        )
       }
 
-      const answer = data.answer
+      if (
+        controller.signal.aborted ||
+        requestId !== requestIdRef.current
+      ) {
+        return
+      }
 
       setMessages((previous) => [
         ...previous,
-        { role: 'assistant', content: answer },
+        { role: 'assistant', content: data.answer as string },
       ])
     } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : 'Unable to contact the AI assistant'
-      )
+      if (
+        controller.signal.aborted ||
+        requestId !== requestIdRef.current
+      ) {
+        return
+      }
+
+      let message = 'Unable to get an AI response. Please try again.'
+
+      if (caughtError instanceof TypeError) {
+        message =
+          'Unable to connect to the AI service. Please check that the backend is running.'
+      } else if (caughtError instanceof Error) {
+        message = caughtError.message
+      }
+
+      setError(message)
+      setFailedQuestion(trimmedQuestion)
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current) {
+        controllerRef.current = null
+        setLoading(false)
+      }
     }
+  }
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    void sendQuestion(question)
   }
 
   return (
     <div className="ai-chat">
       <div className="ai-chat-header">
         <div className="ai-chat-avatar">✦</div>
-
         <div>
           <h2>ChangeLens AI Assistant</h2>
           <p>
@@ -144,9 +228,7 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
         {messages.length === 0 && (
           <div className="ai-chat-welcome">
             <div className="ai-chat-welcome-icon">✦</div>
-
             <h3>How can I help with your code?</h3>
-
             <p>
               Explore Java dependencies, understand change impacts,
               and discover what to test before making changes.
@@ -194,7 +276,7 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
                     <button
                       type="button"
                       onClick={() =>
-                        copyAnswer(message.content, index)
+                        void copyAnswer(message.content, index)
                       }
                       aria-label="Copy AI answer"
                     >
@@ -216,7 +298,6 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
         {loading && (
           <div className="ai-chat-message ai-chat-message-assistant">
             <div className="ai-chat-message-avatar">✦</div>
-
             <div className="ai-chat-thinking">
               <span className="ai-chat-thinking-dot" />
               <span className="ai-chat-thinking-dot" />
@@ -231,7 +312,21 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
 
       {error && (
         <div className="ai-chat-error" role="alert">
-          {error}
+          <strong>Unable to get an AI response</strong>
+          <p>{error}</p>
+
+          {failedQuestion && hasProject && (
+            <button
+              type="button"
+              className="ai-chat-retry"
+              disabled={loading}
+              onClick={() =>
+                void sendQuestion(failedQuestion, true)
+              }
+            >
+              Retry question
+            </button>
+          )}
         </div>
       )}
 
@@ -258,7 +353,6 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
         <div className="ai-chat-composer-footer">
           <span className="ai-chat-context">
             <span className="ai-chat-status-dot" />
-
             {hasProject
               ? `${classCount} classes · ${methodCount} methods in context`
               : 'No project loaded'}
@@ -267,11 +361,7 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
           <button
             type="submit"
             className="ai-chat-send"
-            disabled={
-              !hasProject ||
-              loading ||
-              !question.trim()
-            }
+            disabled={!hasProject || loading || !question.trim()}
           >
             {loading ? 'Thinking...' : 'Send ↑'}
           </button>
