@@ -41,11 +41,19 @@ function CodeAnalysis({ onClassesAnalyzed }: CodeAnalysisProps) {
   const [error, setError] = useState('')
 
   const analyzeCode = async () => {
+    if (loading) return
+
     setLoading(true)
     setError('')
     setResult(null)
+    onClassesAnalyzed(0)
 
     try {
+      if (!code.trim()) {
+        setError('Please enter Java code before analyzing.')
+        return
+      }
+
       const response = await fetch('/api/analyze/java', {
         method: 'POST',
         headers: {
@@ -55,21 +63,60 @@ function CodeAnalysis({ onClassesAnalyzed }: CodeAnalysisProps) {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`)
+        if (response.status === 400) {
+          throw new Error(
+            'The Java code could not be analyzed. Please check for syntax errors and try again.'
+          )
+        }
+
+        if (response.status === 404) {
+          throw new Error(
+            'The analysis service could not be found. Please check the backend configuration.'
+          )
+        }
+
+        if (response.status >= 500) {
+          throw new Error(
+            'The analysis server encountered an error. Please try again. If the problem continues, contact the backend developer.'
+          )
+        }
+
+        throw new Error(
+          `The analysis request failed (status ${response.status}). Please try again.`
+        )
       }
 
-      const data: AnalysisResult = await response.json()
+      const data: unknown = await response.json()
 
-      setResult(data)
+      if (
+        typeof data !== 'object' ||
+        data === null ||
+        !('classes' in data) ||
+        !Array.isArray(data.classes) ||
+        !('imports' in data) ||
+        !Array.isArray(data.imports)
+      ) {
+        throw new Error(
+          'The server returned an unexpected analysis result.'
+        )
+      }
 
-      // Update the Dashboard with the latest analysis count
-      onClassesAnalyzed(data.classes?.length ?? 0)
+      const analysisData = data as AnalysisResult
+
+      setResult(analysisData)
+      onClassesAnalyzed(analysisData.classes.length)
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? `Code analysis failed: ${err.message}`
-          : 'Unable to analyze Java code.'
-      )
+      if (err instanceof TypeError) {
+        setError(
+          'Unable to connect to the analysis server. Please check that the backend is running.'
+        )
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Unable to analyze Java code. Please try again.'
+        )
+      }
     } finally {
       setLoading(false)
     }
@@ -86,8 +133,13 @@ function CodeAnalysis({ onClassesAnalyzed }: CodeAnalysisProps) {
 
       <textarea
         value={code}
-        onChange={(event) => setCode(event.target.value)}
+        onChange={(event) => {
+          setCode(event.target.value)
+          setError('')
+          setResult(null)
+        }}
         spellCheck={false}
+        aria-label="Java source code"
         style={{
           width: '100%',
           minHeight: '280px',
@@ -114,6 +166,7 @@ function CodeAnalysis({ onClassesAnalyzed }: CodeAnalysisProps) {
             border: 'none',
             borderRadius: '8px',
             cursor: loading ? 'wait' : 'pointer',
+            opacity: loading || !code.trim() ? 0.65 : 1,
           }}
         >
           {loading ? 'Analyzing...' : 'Analyze Java Code'}
@@ -121,9 +174,24 @@ function CodeAnalysis({ onClassesAnalyzed }: CodeAnalysisProps) {
       </div>
 
       {error && (
-        <p style={{ color: '#f87171', marginTop: '20px' }}>
-          {error}
-        </p>
+        <div
+          role="alert"
+          style={{
+            marginTop: '20px',
+            padding: '16px',
+            background: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid #ef4444',
+            borderRadius: '10px',
+            color: '#fca5a5',
+            textAlign: 'left',
+          }}
+        >
+          <strong>Unable to analyze Java code</strong>
+
+          <p style={{ margin: '8px 0 0' }}>
+            {error}
+          </p>
+        </div>
       )}
 
       {result && (
