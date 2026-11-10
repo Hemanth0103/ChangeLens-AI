@@ -410,3 +410,28 @@
     font-size: 16px;
   }
 }
+
+.ai-chat-error p {
+  margin: 8px 0 12px;
+  line-height: 1.6;
+}
+
+.ai-chat-retry {
+  background: #7f1d1d;
+  color: #ffffff;
+  border: 1px solid #ef4444;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-chat-retry:hover:not(:disabled) {
+  background: #991b1b;
+}
+
+.ai-chat-retry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
