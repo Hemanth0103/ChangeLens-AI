@@ -1,5 +1,5 @@
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -13,6 +13,7 @@ import {
   type Edge,
   type NodeProps,
 } from '@xyflow/react'
+
 import '@xyflow/react/dist/style.css'
 import './DependencyGraph.css'
 
@@ -32,13 +33,18 @@ const sampleDependencies: Record<string, string[]> = {
   PaymentService: [],
 }
 
-function ClassNodeComponent({ data, selected }: NodeProps<ClassNode>) {
+function ClassNodeComponent({
+  data,
+  selected,
+}: NodeProps<ClassNode>) {
   return (
     <div className={`cl-class-node ${selected ? 'is-selected' : ''}`}>
       <Handle type="target" position={Position.Top} />
       <span className="cl-node-icon">J</span>
       <div className="cl-node-name">{data.className}</div>
-      <div className="cl-node-package">{data.packageName || 'default package'}</div>
+      <div className="cl-node-package">
+        {data.packageName || 'default package'}
+      </div>
       <Handle type="source" position={Position.Bottom} />
     </div>
   )
@@ -50,7 +56,9 @@ function shortName(fullName: string) {
   return fullName.split('.').pop() || fullName
 }
 
-function createGraphLayout(dependencies: Record<string, string[]>) {
+function createGraphLayout(
+  dependencies: Record<string, string[]>
+) {
   const allClasses = new Set<string>()
 
   Object.entries(dependencies).forEach(([source, targets]) => {
@@ -63,8 +71,13 @@ function createGraphLayout(dependencies: Record<string, string[]>) {
   const visiting = new Set<string>()
 
   function getLevel(className: string): number {
-    if (levels.has(className)) return levels.get(className)!
-    if (visiting.has(className)) return 0
+    if (levels.has(className)) {
+      return levels.get(className)!
+    }
+
+    if (visiting.has(className)) {
+      return 0
+    }
 
     visiting.add(className)
 
@@ -76,10 +89,13 @@ function createGraphLayout(dependencies: Record<string, string[]>) {
       .filter((candidate) => !visiting.has(candidate))
       .map(getLevel)
 
-    const level = parentLevels.length ? Math.max(...parentLevels) + 1 : 0
+    const level = parentLevels.length
+      ? Math.max(...parentLevels) + 1
+      : 0
 
     visiting.delete(className)
     levels.set(className, level)
+
     return level
   }
 
@@ -109,7 +125,8 @@ function createGraphLayout(dependencies: Record<string, string[]>) {
         },
         data: {
           className: shortName(name),
-          packageName: lastDot >= 0 ? name.slice(0, lastDot) : '',
+          packageName:
+            lastDot >= 0 ? name.slice(0, lastDot) : '',
         },
       })
     })
@@ -144,17 +161,20 @@ function GraphCanvas({
   const { fitView } = useReactFlow()
 
   useEffect(() => {
-    if (nodes.length) {
-      const frame = requestAnimationFrame(() => {
-        fitView({
-          padding: 0.25,
-          minZoom: 0.75,
-          maxZoom: 1.15,
-          duration: 300,
-        })
-      })
-      return () => cancelAnimationFrame(frame)
+    if (nodes.length === 0) {
+      return
     }
+
+    const frame = requestAnimationFrame(() => {
+      fitView({
+        padding: 0.25,
+        minZoom: 0.75,
+        maxZoom: 1.15,
+        duration: 300,
+      })
+    })
+
+    return () => cancelAnimationFrame(frame)
   }, [nodes, fitView])
 
   const displayNodes = useMemo(
@@ -173,24 +193,31 @@ function GraphCanvas({
   const displayEdges = useMemo(
     () =>
       edges.map((edge) => {
-        const related =
+        const related = Boolean(
           selectedClass &&
-          (edge.source === selectedClass || edge.target === selectedClass)
+            (edge.source === selectedClass ||
+              edge.target === selectedClass)
+        )
 
         return {
           ...edge,
-          animated: !selectedClass || Boolean(related),
+          animated: !selectedClass || related,
           className: related ? 'cl-edge-active' : '',
           style: {
             stroke: selectedClass
-              ? related ? '#38bdf8' : '#334155'
+              ? related
+                ? '#38bdf8'
+                : '#334155'
               : '#38bdf8',
             strokeWidth: related ? 3 : 2,
             opacity: selectedClass && !related ? 0.25 : 1,
           },
           markerEnd: {
             type: MarkerType.ArrowClosed,
-            color: selectedClass && !related ? '#334155' : '#38bdf8',
+            color:
+              selectedClass && !related
+                ? '#334155'
+                : '#38bdf8',
           },
         }
       }),
@@ -218,15 +245,39 @@ function GraphCanvas({
   )
 }
 
+function getGraphError(status: number): string {
+  if (status === 400) {
+    return 'The dependency data could not be processed. Try analyzing the project again.'
+  }
+
+  if (status === 413) {
+    return 'The dependency graph is too large for the server to process.'
+  }
+
+  if (status === 429) {
+    return 'Too many requests. Please wait and try again.'
+  }
+
+  if (status >= 500) {
+    return 'The graph server encountered an error. Please try again later.'
+  }
+
+  return `Graph generation failed (HTTP ${status}).`
+}
+
 function DependencyGraph({
   dependencies,
   onDependenciesFound,
 }: DependencyGraphProps) {
   const [nodes, setNodes] = useState<ClassNode[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
-  const [selectedClass, setSelectedClass] = useState<string | null>(null)
+  const [selectedClass, setSelectedClass] =
+    useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const requestRef = useRef<AbortController | null>(null)
+  const requestIdRef = useRef(0)
 
   const projectDependencies = useMemo(
     () => dependencies ?? sampleDependencies,
@@ -236,10 +287,23 @@ function DependencyGraph({
   const signature = JSON.stringify(projectDependencies)
 
   useEffect(() => {
+    return () => {
+      requestIdRef.current += 1
+      requestRef.current?.abort()
+      requestRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    requestIdRef.current += 1
+    requestRef.current?.abort()
+    requestRef.current = null
+
     setNodes([])
     setEdges([])
     setSelectedClass(null)
     setError('')
+    setLoading(false)
     onDependenciesFound(0)
   }, [signature, onDependenciesFound])
 
@@ -254,6 +318,12 @@ function DependencyGraph({
     : []
 
   const generateGraph = async () => {
+    requestRef.current?.abort()
+
+    const controller = new AbortController()
+    requestRef.current = controller
+    const requestId = ++requestIdRef.current
+
     setLoading(true)
     setError('')
     setSelectedClass(null)
@@ -263,40 +333,75 @@ function DependencyGraph({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(projectDependencies),
+        signal: controller.signal,
       })
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      if (!response.ok) {
+        throw new Error(getGraphError(response.status))
+      }
 
       await response.json()
 
+      if (
+        controller.signal.aborted ||
+        requestId !== requestIdRef.current
+      ) {
+        return
+      }
+
       const graph = createGraphLayout(projectDependencies)
+
       setNodes(graph.nodes)
       setEdges(graph.edges)
       onDependenciesFound(graph.edges.length)
     } catch (err) {
+      if (
+        controller.signal.aborted ||
+        requestId !== requestIdRef.current
+      ) {
+        return
+      }
+
       setNodes([])
       setEdges([])
       onDependenciesFound(0)
-      setError(
-        err instanceof Error
-          ? `Graph generation failed: ${err.message}`
-          : 'Unable to generate graph'
-      )
+
+      if (err instanceof TypeError) {
+        setError(
+          'Cannot connect to the graph server. Check that the backend is running.'
+        )
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Unable to generate the dependency graph.'
+        )
+      }
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current) {
+        setLoading(false)
+        requestRef.current = null
+      }
     }
   }
+
+  const hasGraph = nodes.length > 0
 
   return (
     <section className="cl-explorer">
       <div className="cl-explorer-heading">
         <div>
-          <span className="cl-eyebrow">ARCHITECTURE EXPLORER</span>
+          <span className="cl-eyebrow">
+            ARCHITECTURE EXPLORER
+          </span>
           <h2>Dependency Explorer</h2>
-          <p>Explore your Java project's class relationships.</p>
+          <p>
+            Explore your Java project's class relationships.
+          </p>
         </div>
 
         <button
+          type="button"
           className="cl-generate-button"
           onClick={generateGraph}
           disabled={loading}
@@ -310,10 +415,12 @@ function DependencyGraph({
           <span>Classes analyzed</span>
           <strong>{nodes.length}</strong>
         </div>
+
         <div className="cl-explorer-stat">
           <span>Dependencies mapped</span>
           <strong>{edges.length}</strong>
         </div>
+
         <div className="cl-explorer-stat">
           <span>Data source</span>
           <strong className="cl-stat-source">
@@ -322,7 +429,18 @@ function DependencyGraph({
         </div>
       </div>
 
-      {error && <p className="cl-explorer-error" role="alert">{error}</p>}
+      {!dependencies && (
+        <p className="cl-explorer-notice" role="status">
+          You're viewing sample dependency data. Upload and analyze
+          a Java project to generate its dependency graph.
+        </p>
+      )}
+
+      {error && (
+        <p className="cl-explorer-error" role="alert">
+          {error}
+        </p>
+      )}
 
       <div className="cl-explorer-layout">
         <div className="cl-graph-panel">
@@ -340,47 +458,90 @@ function DependencyGraph({
                 onSelect={setSelectedClass}
               />
             </ReactFlowProvider>
+
+            {!hasGraph && !loading && (
+              <div className="cl-graph-empty" role="status">
+                <div className="cl-graph-empty-icon">◎</div>
+                <h3>No graph generated yet</h3>
+                <p>
+                  Click Generate Graph to visualize the class
+                  dependencies.
+                </p>
+              </div>
+            )}
+
+            {loading && (
+              <div className="cl-graph-empty" role="status">
+                <h3>Generating dependency graph...</h3>
+                <p>Please wait while the graph is prepared.</p>
+              </div>
+            )}
           </div>
         </div>
 
         <aside className="cl-details-panel">
           {selectedClass ? (
             <>
-              <span className="cl-eyebrow">SELECTED CLASS</span>
+              <span className="cl-eyebrow">
+                SELECTED CLASS
+              </span>
               <h3>{shortName(selectedClass)}</h3>
-              <p className="cl-full-name">{selectedClass}</p>
+              <p className="cl-full-name">
+                {selectedClass}
+              </p>
 
               <div className="cl-detail-divider" />
 
               <div className="cl-detail-section">
-                <h4>Depends on <span>{directDependencies.length}</span></h4>
+                <h4>
+                  Depends on <span>{directDependencies.length}</span>
+                </h4>
+
                 {directDependencies.length ? (
                   directDependencies.map((name) => (
-                    <div className="cl-relationship" key={name}>
+                    <div
+                      className="cl-relationship"
+                      key={name}
+                    >
                       <span className="cl-relationship-dot" />
-                      <span title={name}>{shortName(name)}</span>
+                      <span title={name}>
+                        {shortName(name)}
+                      </span>
                     </div>
                   ))
                 ) : (
-                  <p className="cl-empty-message">No direct dependencies</p>
+                  <p className="cl-empty-message">
+                    No direct dependencies
+                  </p>
                 )}
               </div>
 
               <div className="cl-detail-section">
-                <h4>Used by <span>{directDependents.length}</span></h4>
+                <h4>
+                  Used by <span>{directDependents.length}</span>
+                </h4>
+
                 {directDependents.length ? (
                   directDependents.map((name) => (
-                    <div className="cl-relationship" key={name}>
+                    <div
+                      className="cl-relationship"
+                      key={name}
+                    >
                       <span className="cl-relationship-dot yellow" />
-                      <span title={name}>{shortName(name)}</span>
+                      <span title={name}>
+                        {shortName(name)}
+                      </span>
                     </div>
                   ))
                 ) : (
-                  <p className="cl-empty-message">No direct dependents</p>
+                  <p className="cl-empty-message">
+                    No direct dependents
+                  </p>
                 )}
               </div>
 
               <button
+                type="button"
                 className="cl-clear-button"
                 onClick={() => setSelectedClass(null)}
               >
