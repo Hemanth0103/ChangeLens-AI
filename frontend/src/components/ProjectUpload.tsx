@@ -1,5 +1,5 @@
 
-import { useState, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 
 export type AnalyzedFile = {
   fileName: string
@@ -24,6 +24,87 @@ type ProjectUploadProps = {
   onAnalysisComplete: (result: ProjectAnalysisResult) => void
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) &&
+    value.every((item) => typeof item === 'string')
+}
+
+function isStringArrayRecord(
+  value: unknown
+): value is Record<string, string[]> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every(isStringArray)
+  )
+}
+
+function isProjectAnalysisResult(
+  value: unknown
+): value is ProjectAnalysisResult {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return false
+  }
+
+  const data = value as Record<string, unknown>
+
+  return (
+    ['totalFiles', 'totalClasses', 'totalDependencies'].every(
+      (key) =>
+        typeof data[key] === 'number' &&
+        Number.isInteger(data[key]) &&
+        (data[key] as number) >= 0
+    ) &&
+    Array.isArray(data.files) &&
+    data.files.every((file: unknown) => {
+      if (
+        typeof file !== 'object' ||
+        file === null ||
+        Array.isArray(file)
+      ) {
+        return false
+      }
+
+      const item = file as Record<string, unknown>
+
+      return (
+        typeof item.fileName === 'string' &&
+        isStringArray(item.classes) &&
+        (item.packageName === undefined ||
+          typeof item.packageName === 'string')
+      )
+    }) &&
+    isStringArrayRecord(data.dependencies) &&
+    isStringArrayRecord(data.classMethods) &&
+    isStringArray(data.errors)
+  )
+}
+
+async function getResponseError(response: Response): Promise<string> {
+  if (response.status === 400) {
+    return 'The selected Java files could not be analyzed. Check the files and try again.'
+  }
+
+  if (response.status === 413) {
+    return 'The selected files are too large for the server.'
+  }
+
+  if (response.status === 429) {
+    return 'Too many requests. Please wait a moment and try again.'
+  }
+
+  if (response.status >= 500) {
+    return 'The analysis server encountered an error. Please try again later.'
+  }
+
+  return `Project analysis failed (HTTP ${response.status}).`
+}
+
 function ProjectUpload({
   selectedFiles,
   onSelectedFilesChange,
@@ -34,23 +115,55 @@ function ProjectUpload({
   const [error, setError] = useState('')
   const [selectionMessage, setSelectionMessage] = useState('')
 
-  const handleFileChange = (
-    event: ChangeEvent<HTMLInputElement>
-  ) => {
-    const files = Array.from(event.target.files ?? [])
+  const requestRef = useRef<AbortController | null>(null)
+  const requestIdRef = useRef(0)
+
+  useEffect(() => {
+    return () => {
+      requestIdRef.current += 1
+      requestRef.current?.abort()
+      requestRef.current = null
+    }
+  }, [])
+
+  const selectFiles = (files: File[], fromFolder: boolean) => {
+    requestIdRef.current += 1
+    requestRef.current?.abort()
+    requestRef.current = null
+
+    setLoading(false)
+    setError('')
 
     const javaFiles = files.filter((file) =>
       file.name.toLowerCase().endsWith('.java')
     )
 
     onSelectedFilesChange(javaFiles)
-    setError('')
+
+    const ignoredFiles = files.length - javaFiles.length
+
+    if (javaFiles.length === 0) {
+      setSelectionMessage(
+        'No Java files were found. Please choose .java files or a folder containing Java source files.'
+      )
+      return
+    }
 
     setSelectionMessage(
-      javaFiles.length > 0
-        ? `${javaFiles.length} Java file(s) selected.`
-        : 'No Java files were found in your selection.'
+      fromFolder
+        ? `${javaFiles.length} Java file(s) found. ${ignoredFiles} non-Java file(s) ignored.`
+        : `${javaFiles.length} Java file(s) selected.`
     )
+  }
+
+  const handleFileChange = (
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = Array.from(event.target.files ?? [])
+
+    if (files.length > 0) {
+      selectFiles(files, false)
+    }
 
     event.target.value = ''
   }
@@ -60,19 +173,9 @@ function ProjectUpload({
   ) => {
     const files = Array.from(event.target.files ?? [])
 
-    const javaFiles = files.filter((file) =>
-      file.name.toLowerCase().endsWith('.java')
-    )
-
-    onSelectedFilesChange(javaFiles)
-    setError('')
-
-    const ignoredFiles = files.length - javaFiles.length
-
-    setSelectionMessage(
-      `${javaFiles.length} Java file(s) found. ` +
-        `${ignoredFiles} non-Java file(s) ignored.`
-    )
+    if (files.length > 0) {
+      selectFiles(files, true)
+    }
 
     event.target.value = ''
   }
@@ -82,6 +185,13 @@ function ProjectUpload({
       setError('Please select at least one Java file.')
       return
     }
+
+    requestRef.current?.abort()
+
+    const controller = new AbortController()
+    requestRef.current = controller
+
+    const requestId = ++requestIdRef.current
 
     setLoading(true)
     setError('')
@@ -96,24 +206,53 @@ function ProjectUpload({
       const response = await fetch('/api/projects/analyze', {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        throw new Error(await getResponseError(response))
       }
 
-      const data: ProjectAnalysisResult =
-        await response.json()
+      const data: unknown = await response.json()
+
+      if (!isProjectAnalysisResult(data)) {
+        throw new Error(
+          'The server returned an unexpected analysis result. Please try again.'
+        )
+      }
+
+      if (
+        controller.signal.aborted ||
+        requestId !== requestIdRef.current
+      ) {
+        return
+      }
 
       onAnalysisComplete(data)
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? `Project analysis failed: ${err.message}`
-          : 'Unable to analyze the selected files.'
-      )
+      if (
+        controller.signal.aborted ||
+        requestId !== requestIdRef.current
+      ) {
+        return
+      }
+
+      if (err instanceof TypeError) {
+        setError(
+          'Cannot connect to the analysis server. Check that the backend is running and try again.'
+        )
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Unable to analyze the selected Java files.'
+        )
+      }
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current) {
+        setLoading(false)
+        requestRef.current = null
+      }
     }
   }
 
@@ -239,6 +378,7 @@ function ProjectUpload({
 
       {selectionMessage && (
         <p
+          role="status"
           style={{
             marginTop: '16px',
             color: '#38bdf8',
@@ -285,6 +425,7 @@ function ProjectUpload({
       )}
 
       <button
+        type="button"
         onClick={analyzeProject}
         disabled={loading || selectedFiles.length === 0}
         style={{
@@ -308,6 +449,7 @@ function ProjectUpload({
 
       {error && (
         <p
+          role="alert"
           style={{
             color: '#f87171',
             marginTop: '20px',
