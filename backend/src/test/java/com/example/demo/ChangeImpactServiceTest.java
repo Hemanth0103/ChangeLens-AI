@@ -4,6 +4,8 @@ package com.example.demo;
 import com.example.demo.service.ChangeImpactService;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -16,7 +18,6 @@ class ChangeImpactServiceTest {
 
     @Test
     void shouldDetectDirectAndIndirectImpact() {
-
         Map<String, List<String>> dependencies = Map.of(
                 "OrderController", List.of("OrderService"),
                 "OrderService", List.of("PaymentService"),
@@ -24,19 +25,14 @@ class ChangeImpactServiceTest {
         );
 
         Map<String, Object> result =
-                service.analyzeImpact(
-                        "PaymentService", dependencies);
+                service.analyzeImpact("PaymentService", dependencies);
 
-        assertEquals("PaymentService",
-                result.get("changedClass"));
-
+        assertEquals("PaymentService", result.get("changedClass"));
         assertEquals(2, result.get("totalImpacted"));
         assertEquals(1, result.get("directImpact"));
         assertEquals(1, result.get("indirectImpact"));
         assertEquals(2, result.get("maxDepth"));
-        assertEquals(100.0,
-                (Double) result.get("projectReach"), 0.001);
-
+        assertEquals(100.0, (Double) result.get("projectReach"), 0.001);
         assertEquals(55, result.get("riskScore"));
         assertEquals("MEDIUM", result.get("riskLevel"));
 
@@ -50,15 +46,13 @@ class ChangeImpactServiceTest {
 
     @Test
     void shouldReturnLowRiskWhenNoClassesAreImpacted() {
-
         Map<String, List<String>> dependencies = Map.of(
                 "PaymentService", List.of(),
                 "OrderService", List.of()
         );
 
         Map<String, Object> result =
-                service.analyzeImpact(
-                        "PaymentService", dependencies);
+                service.analyzeImpact("PaymentService", dependencies);
 
         assertEquals(0, result.get("totalImpacted"));
         assertEquals(0, result.get("directImpact"));
@@ -70,7 +64,6 @@ class ChangeImpactServiceTest {
 
     @Test
     void shouldReturnHighRiskForHighlyConnectedClass() {
-
         Map<String, List<String>> dependencies = Map.of(
                 "CoreService", List.of(),
                 "ServiceA", List.of("CoreService"),
@@ -83,23 +76,19 @@ class ChangeImpactServiceTest {
         );
 
         Map<String, Object> result =
-                service.analyzeImpact(
-                        "CoreService", dependencies);
+                service.analyzeImpact("CoreService", dependencies);
 
         assertEquals(7, result.get("totalImpacted"));
         assertEquals(5, result.get("directImpact"));
         assertEquals(2, result.get("indirectImpact"));
         assertEquals(2, result.get("maxDepth"));
-        assertEquals(100.0,
-                (Double) result.get("projectReach"), 0.001);
-
+        assertEquals(100.0, (Double) result.get("projectReach"), 0.001);
         assertEquals(80, result.get("riskScore"));
         assertEquals("HIGH", result.get("riskLevel"));
     }
 
     @Test
     void shouldHandleCircularDependencies() {
-
         Map<String, List<String>> dependencies = Map.of(
                 "ClassA", List.of("ClassB"),
                 "ClassB", List.of("ClassA")
@@ -121,21 +110,83 @@ class ChangeImpactServiceTest {
 
     @Test
     void shouldRejectBlankChangedClass() {
-
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.analyzeImpact(
-                        " ", Map.of())
+                () -> service.analyzeImpact(" ", Map.of())
         );
     }
 
     @Test
     void shouldRejectNullDependencies() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.analyzeImpact("PaymentService", null)
+        );
+    }
+
+    @Test
+    void shouldRejectNullChangedClass() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.analyzeImpact(null, Map.of())
+        );
+    }
+
+    @Test
+    void shouldRejectNullClassName() {
+        Map<String, List<String>> dependencies = new HashMap<>();
+        dependencies.put(null, List.of("PaymentService"));
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.analyzeImpact(
-                        "PaymentService", null)
+                () -> service.analyzeImpact("PaymentService", dependencies)
+        );
+    }
+
+    @Test
+    void shouldRejectBlankClassName() {
+        Map<String, List<String>> dependencies =
+                Map.of(" ", List.of("PaymentService"));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.analyzeImpact("PaymentService", dependencies)
+        );
+    }
+
+    @Test
+    void shouldRejectNullDependencyList() {
+        Map<String, List<String>> dependencies = new HashMap<>();
+        dependencies.put("OrderService", null);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.analyzeImpact("PaymentService", dependencies)
+        );
+    }
+
+    @Test
+    void shouldRejectNullDependencyEntry() {
+        List<String> values = new ArrayList<>();
+        values.add(null);
+
+        Map<String, List<String>> dependencies =
+                Map.of("OrderService", values);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.analyzeImpact("PaymentService", dependencies)
+        );
+    }
+
+    @Test
+    void shouldRejectBlankDependencyEntry() {
+        Map<String, List<String>> dependencies =
+                Map.of("OrderService", List.of(" "));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.analyzeImpact("PaymentService", dependencies)
         );
     }
 }
