@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import './ImpactAnalysis.css'
 
@@ -49,6 +49,7 @@ function calculateImpactDetails(
   for (const [source, targets] of Object.entries(dependencies)) {
     for (const target of targets) {
       if (!reverse[target]) reverse[target] = []
+
       if (!reverse[target].includes(source)) {
         reverse[target].push(source)
       }
@@ -56,6 +57,7 @@ function calculateImpactDetails(
   }
 
   const visited = new Set([changedClass])
+
   const queue: ImpactDetail[] = [
     {
       className: changedClass,
@@ -92,6 +94,95 @@ function calculateImpactDetails(
   )
 }
 
+function isImpactResult(value: unknown): value is ImpactResult {
+  if (!value || typeof value !== 'object') return false
+
+  const data = value as Record<string, unknown>
+
+  const isNonNegativeInteger = (number: unknown) =>
+    typeof number === 'number' &&
+    Number.isSafeInteger(number) &&
+    number >= 0
+
+  return (
+    typeof data.changedClass === 'string' &&
+    data.changedClass.trim().length > 0 &&
+    Array.isArray(data.impactedClasses) &&
+    data.impactedClasses.every(
+      (item: unknown) => typeof item === 'string'
+    ) &&
+    isNonNegativeInteger(data.totalImpacted) &&
+    isNonNegativeInteger(data.directImpact) &&
+    isNonNegativeInteger(data.indirectImpact) &&
+    isNonNegativeInteger(data.maxDepth) &&
+    typeof data.projectReach === 'number' &&
+    Number.isFinite(data.projectReach) &&
+    data.projectReach >= 0 &&
+    data.projectReach <= 100 &&
+    typeof data.riskScore === 'number' &&
+    Number.isFinite(data.riskScore) &&
+    data.riskScore >= 0 &&
+    data.riskScore <= 100 &&
+    ['LOW', 'MEDIUM', 'HIGH'].includes(
+      String(data.riskLevel)
+    ) &&
+    data.totalImpacted === data.impactedClasses.length &&
+    data.totalImpacted ===
+      (data.directImpact as number) +
+        (data.indirectImpact as number)
+  )
+}
+
+function getErrorMessage(
+  error: unknown,
+  fallback: string
+): string {
+  if (error instanceof TypeError) {
+    return 'Cannot connect to the backend. Make sure Spring Boot is running.'
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+
+  return fallback
+}
+
+async function readErrorResponse(
+  response: Response
+): Promise<string> {
+  if (response.status === 400) {
+    return 'Invalid request. Please check the selected class and project.'
+  }
+
+  if (response.status === 404) {
+    return 'The requested API endpoint was not found.'
+  }
+
+  if (response.status >= 500) {
+    return 'The backend encountered an error. Please try again.'
+  }
+
+  try {
+    const data: unknown = await response.json()
+
+    if (data && typeof data === 'object') {
+      const errorData = data as Record<string, unknown>
+
+      if (
+        typeof errorData.error === 'string' &&
+        errorData.error.trim()
+      ) {
+        return errorData.error
+      }
+    }
+  } catch {
+    // The backend may return an empty or non-JSON response.
+  }
+
+  return `Request failed (HTTP ${response.status}).`
+}
+
 function MetricCard({
   label,
   value,
@@ -104,7 +195,10 @@ function MetricCard({
   return (
     <div className="impact-metric">
       <span className="impact-metric-label">{label}</span>
-      <strong className="impact-metric-value">{value}</strong>
+
+      <strong className="impact-metric-value">
+        {value}
+      </strong>
 
       {description && (
         <span className="impact-metric-description">
@@ -128,6 +222,12 @@ function ImpactAnalysis({
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState('')
 
+  const impactControllerRef = useRef<AbortController | null>(null)
+  const aiControllerRef = useRef<AbortController | null>(null)
+
+  const onImpactedClassesRef = useRef(onImpactedClasses)
+  onImpactedClassesRef.current = onImpactedClasses
+
   const activeDependencies = dependencies ?? sampleDependencies
 
   const classNames = Array.from(
@@ -138,20 +238,48 @@ function ImpactAnalysis({
   ).sort()
 
   useEffect(() => {
+    impactControllerRef.current?.abort()
+    aiControllerRef.current?.abort()
+
+    impactControllerRef.current = null
+    aiControllerRef.current = null
+
     setSelectedClass('')
     setResult(null)
     setError('')
+    setLoading(false)
     setAiExplanation('')
     setAiError('')
-    onImpactedClasses(0)
-  }, [dependencies, onImpactedClasses])
+    setAiLoading(false)
+
+    onImpactedClassesRef.current(0)
+
+    return () => {
+      impactControllerRef.current?.abort()
+      aiControllerRef.current?.abort()
+    }
+  }, [dependencies])
+
+  const cancelPendingRequests = () => {
+    impactControllerRef.current?.abort()
+    aiControllerRef.current?.abort()
+
+    impactControllerRef.current = null
+    aiControllerRef.current = null
+
+    setLoading(false)
+    setAiLoading(false)
+  }
 
   const resetAnalysis = () => {
+    cancelPendingRequests()
+
     setResult(null)
     setError('')
     setAiExplanation('')
     setAiError('')
-    onImpactedClasses(0)
+
+    onImpactedClassesRef.current(0)
   }
 
   const analyzeImpact = async () => {
@@ -160,13 +288,20 @@ function ImpactAnalysis({
       return
     }
 
-    setLoading(true)
     resetAnalysis()
+
+    const controller = new AbortController()
+    impactControllerRef.current = controller
+
+    setLoading(true)
 
     try {
       const response = await fetch('/api/analyze/impact', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
         body: JSON.stringify({
           changedClass: selectedClass,
           dependencies: activeDependencies,
@@ -174,73 +309,104 @@ function ImpactAnalysis({
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        throw new Error(await readErrorResponse(response))
       }
 
-      const data: ImpactResult = await response.json()
+      const data: unknown = await response.json()
 
-      if (
-        !Array.isArray(data.impactedClasses) ||
-        typeof data.totalImpacted !== 'number' ||
-        typeof data.riskScore !== 'number' ||
-        !Number.isFinite(data.riskScore) ||
-        !['LOW', 'MEDIUM', 'HIGH'].includes(data.riskLevel)
-      ) {
-        throw new Error('Invalid impact analysis response.')
+      if (!isImpactResult(data)) {
+        throw new Error(
+          'The backend returned an invalid impact analysis response.'
+        )
       }
+
+      if (data.changedClass !== selectedClass) {
+        throw new Error(
+          'The backend returned results for a different class.'
+        )
+      }
+
+      if (controller.signal.aborted) return
 
       setResult(data)
-      onImpactedClasses(data.totalImpacted)
+      onImpactedClassesRef.current(data.totalImpacted)
     } catch (err) {
+      if (controller.signal.aborted) return
+
       setError(
-        err instanceof Error
-          ? `Impact analysis failed: ${err.message}`
-          : 'Unable to analyze change impact.'
+        getErrorMessage(
+          err,
+          'Unable to analyze change impact.'
+        )
       )
     } finally {
-      setLoading(false)
+      if (impactControllerRef.current === controller) {
+        impactControllerRef.current = null
+        setLoading(false)
+      }
     }
   }
 
   const generateAiExplanation = async () => {
     if (!result) return
 
+    aiControllerRef.current?.abort()
+
+    const controller = new AbortController()
+    aiControllerRef.current = controller
+
     setAiLoading(true)
     setAiError('')
     setAiExplanation('')
 
     try {
-      const response = await fetch('/api/ai/impact-explanation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          changedClass: result.changedClass,
-          dependencies: activeDependencies,
-        }),
-      })
+      const response = await fetch(
+        '/api/ai/impact-explanation',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            changedClass: result.changedClass,
+            dependencies: activeDependencies,
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(await readErrorResponse(response))
+      }
 
       const data: AiImpactResponse = await response.json()
 
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP ${response.status}`)
+      if (
+        typeof data.aiExplanation !== 'string' ||
+        !data.aiExplanation.trim()
+      ) {
+        throw new Error(
+          'The AI service returned an empty explanation.'
+        )
       }
 
-      if (
-        !data.aiExplanation ||
-        typeof data.aiExplanation !== 'string'
-      ) {
-        throw new Error('AI returned an empty explanation.')
-      }
+      if (controller.signal.aborted) return
 
       setAiExplanation(data.aiExplanation)
     } catch (err) {
+      if (controller.signal.aborted) return
+
       setAiError(
-        err instanceof Error
-          ? err.message
-          : 'Unable to generate AI explanation.'
+        getErrorMessage(
+          err,
+          'Unable to generate an AI explanation.'
+        )
       )
     } finally {
-      setAiLoading(false)
+      if (aiControllerRef.current === controller) {
+        aiControllerRef.current = null
+        setAiLoading(false)
+      }
     }
   }
 
@@ -254,10 +420,7 @@ function ImpactAnalysis({
     : []
 
   const riskLevel = result?.riskLevel ?? 'LOW'
-
-  const riskScore = result
-    ? Math.max(0, Math.min(100, result.riskScore))
-    : 0
+  const riskScore = result?.riskScore ?? 0
 
   return (
     <section className="impact-dashboard">
@@ -350,7 +513,9 @@ function ImpactAnalysis({
       {loading && (
         <div className="impact-empty" role="status">
           <h3>Analyzing dependencies...</h3>
-          <p>Calculating affected classes and structural risk.</p>
+          <p>
+            Calculating affected classes and structural risk.
+          </p>
         </div>
       )}
 
@@ -461,10 +626,7 @@ function ImpactAnalysis({
               <div className="impact-reach-track">
                 <div
                   style={{
-                    width: `${Math.max(
-                      0,
-                      Math.min(100, result.projectReach)
-                    )}%`,
+                    width: `${result.projectReach}%`,
                   }}
                 />
               </div>
@@ -527,10 +689,7 @@ function ImpactAnalysis({
 
                     <div className="impact-path">
                       <span>Impact path</span>
-
-                      <div>
-                        {detail.path.join(' → ')}
-                      </div>
+                      <div>{detail.path.join(' → ')}</div>
                     </div>
 
                     <p className="impact-path-note">
