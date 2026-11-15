@@ -123,4 +123,3 @@ class AutomaticImpactAnalysisControllerTest {
         assertEquals(expectedError, response.getBody().get("error"));
     }
 }
-
