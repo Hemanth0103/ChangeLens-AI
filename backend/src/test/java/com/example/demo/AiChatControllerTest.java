@@ -46,19 +46,14 @@ class AiChatControllerTest {
 
         dependencies = Map.of(
                 "demo.PaymentService", List.of(),
-                "demo.OrderService",
-                List.of("demo.PaymentService"),
-                "demo.OrderController",
-                List.of("demo.OrderService")
+                "demo.OrderService", List.of("demo.PaymentService"),
+                "demo.OrderController", List.of("demo.OrderService")
         );
 
         classMethods = Map.of(
-                "demo.PaymentService",
-                List.of("processPayment"),
-                "demo.OrderService",
-                List.of("placeOrder"),
-                "demo.OrderController",
-                List.of("checkout")
+                "demo.PaymentService", List.of("processPayment"),
+                "demo.OrderService", List.of("placeOrder"),
+                "demo.OrderController", List.of("checkout")
         );
     }
 
@@ -130,17 +125,9 @@ class AiChatControllerTest {
 
         String answer = extractAnswer(response);
 
-        assertTrue(
-                answer.contains("Verified Impact Analysis")
-        );
-
-        assertTrue(
-                answer.contains("Test the dependent classes.")
-        );
-
-        assertTrue(
-                answer.contains("AI-Generated Explanation")
-        );
+        assertTrue(answer.contains("Verified Impact Analysis"));
+        assertTrue(answer.contains("Test the dependent classes."));
+        assertTrue(answer.contains("AI-Generated Explanation"));
     }
 
     // TEST 4: Method context in AI prompt
@@ -200,13 +187,8 @@ class AiChatControllerTest {
                 )
         );
 
-        assertTrue(
-                answer.contains("Total impacted: 2")
-        );
-
-        assertTrue(
-                answer.contains("Structural risk score: 55/100")
-        );
+        assertTrue(answer.contains("Total impacted: 2"));
+        assertTrue(answer.contains("Structural risk score: 55/100"));
     }
 
     // TEST 6: Ollama failure
@@ -253,10 +235,7 @@ class AiChatControllerTest {
 
         ResponseEntity<?> response = controller.chat(request);
 
-        assertEquals(
-                HttpStatus.OK,
-                response.getStatusCode()
-        );
+        assertEquals(HttpStatus.OK, response.getStatusCode());
 
         String answer = extractAnswer(response);
 
@@ -265,9 +244,7 @@ class AiChatControllerTest {
         );
 
         assertTrue(
-                answer.contains(
-                        "demo.PaymentService.refundPayment()"
-                )
+                answer.contains("demo.PaymentService.refundPayment()")
         );
     }
 
@@ -290,10 +267,7 @@ class AiChatControllerTest {
 
         ResponseEntity<?> response = controller.chat(request);
 
-        assertEquals(
-                HttpStatus.OK,
-                response.getStatusCode()
-        );
+        assertEquals(HttpStatus.OK, response.getStatusCode());
 
         String answer = extractAnswer(response);
 
@@ -322,23 +296,16 @@ class AiChatControllerTest {
 
         ResponseEntity<?> response = controller.chat(request);
 
-        assertEquals(
-                HttpStatus.OK,
-                response.getStatusCode()
-        );
+        assertEquals(HttpStatus.OK, response.getStatusCode());
 
         String answer = extractAnswer(response);
 
         assertTrue(
-                answer.contains(
-                        "demo.PaymentService.refundPayment()"
-                )
+                answer.contains("demo.PaymentService.refundPayment()")
         );
 
         assertTrue(
-                answer.contains(
-                        "demo.OrderController.deleteOrder()"
-                )
+                answer.contains("demo.OrderController.deleteOrder()")
         );
     }
 
@@ -358,22 +325,11 @@ class AiChatControllerTest {
 
         String answer = extractAnswer(response);
 
-        assertEquals(
-                HttpStatus.OK,
-                response.getStatusCode()
-        );
+        assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        assertTrue(
-                answer.contains("demo.OrderController")
-        );
-
-        assertTrue(
-                answer.contains("checkout()")
-        );
-
-        assertTrue(
-                answer.contains("declared")
-        );
+        assertTrue(answer.contains("demo.OrderController"));
+        assertTrue(answer.contains("checkout()"));
+        assertTrue(answer.contains("declared"));
 
         verifyNoInteractions(ollamaService);
     }
@@ -394,26 +350,12 @@ class AiChatControllerTest {
 
         String answer = extractAnswer(response);
 
-        assertEquals(
-                HttpStatus.OK,
-                response.getStatusCode()
-        );
+        assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        assertTrue(
-                answer.contains("demo.OrderController")
-        );
-
-        assertTrue(
-                answer.contains("deleteOrder()")
-        );
-
-        assertTrue(
-                answer.contains("not listed")
-        );
-
-        assertTrue(
-                answer.contains("checkout()")
-        );
+        assertTrue(answer.contains("demo.OrderController"));
+        assertTrue(answer.contains("deleteOrder()"));
+        assertTrue(answer.contains("not listed"));
+        assertTrue(answer.contains("checkout()"));
 
         verifyNoInteractions(ollamaService);
     }
@@ -440,18 +382,10 @@ class AiChatControllerTest {
 
         String answer = extractAnswer(response);
 
-        assertEquals(
-                HttpStatus.OK,
-                response.getStatusCode()
-        );
+        assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        assertTrue(
-                answer.contains("unavailable")
-        );
-
-        assertFalse(
-                answer.contains("does not declare")
-        );
+        assertTrue(answer.contains("unavailable"));
+        assertFalse(answer.contains("does not declare"));
 
         verifyNoInteractions(ollamaService);
     }
@@ -473,26 +407,12 @@ class AiChatControllerTest {
 
         String answer = extractAnswer(response);
 
-        assertEquals(
-                HttpStatus.OK,
-                response.getStatusCode()
-        );
+        assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        assertTrue(
-                answer.contains("demo.PaymentService")
-        );
-
-        assertTrue(
-                answer.contains("refundPayment()")
-        );
-
-        assertTrue(
-                answer.contains("demo.OrderController")
-        );
-
-        assertTrue(
-                answer.contains("deleteOrder()")
-        );
+        assertTrue(answer.contains("demo.PaymentService"));
+        assertTrue(answer.contains("refundPayment()"));
+        assertTrue(answer.contains("demo.OrderController"));
+        assertTrue(answer.contains("deleteOrder()"));
 
         verifyNoInteractions(ollamaService);
     }
@@ -516,19 +436,16 @@ class AiChatControllerTest {
 
         String answer = extractAnswer(response);
 
-        assertEquals(
-                HttpStatus.OK,
-                response.getStatusCode()
-        );
+        assertEquals(HttpStatus.OK, response.getStatusCode());
 
         assertTrue(
                 answer.contains("Review dependent classes.")
         );
 
-        verify(ollamaService)
-                .generateExplanation(anyString());
+        verify(ollamaService).generateExplanation(anyString());
     }
 
+    // TEST 15: Contradictory risk description
 
     @Test
     void contradictoryRiskDescriptionProducesWarning() {
@@ -549,9 +466,14 @@ class AiChatControllerTest {
 
         String answer = extractAnswer(response);
 
-        assertTrue(answer.contains("Risk Classification Warning"));
+        assertTrue(
+                answer.contains("Risk Classification Warning")
+        );
+
         assertTrue(answer.contains("MEDIUM"));
     }
+
+    // TEST 16: Matching risk description
 
     @Test
     void matchingRiskDescriptionDoesNotProduceWarning() {
@@ -568,12 +490,55 @@ class AiChatControllerTest {
 
         ResponseEntity<?> response = controller.chat(request);
 
+        String answer = extractAnswer(response);
+
+        assertFalse(
+                answer.contains("Risk Classification Warning")
+        );
+
+        assertTrue(
+                answer.contains("The structural risk is moderate.")
+        );
+    }
+
+    // TEST 17: Unsupported behavior must not be shown
+
+    @Test
+    void unsupportedBehaviorIsHiddenFromAiChatResponse() {
+
+        when(ollamaService.generateExplanation(anyString()))
+                .thenReturn("""
+                        PaymentService.processPayment() connects
+                        to a payment gateway to charge customers.
+                        """);
+
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "Explain PaymentService",
+                        dependencies,
+                        classMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
         assertEquals(HttpStatus.OK, response.getStatusCode());
 
         String answer = extractAnswer(response);
 
-        assertFalse(answer.contains("Risk Classification Warning"));
-        assertTrue(answer.contains("The structural risk is moderate."));
+        String normalizedAnswer =
+                answer.replaceAll("\\s+", " ");
+
+        assertFalse(
+                normalizedAnswer.contains(
+                        "connects to a payment gateway"
+                ),
+                "Unsupported behavior must not be shown as fact"
+        );
+
+        assertTrue(
+                answer.contains("demo.PaymentService"),
+                "The response should retain verified project context"
+        );
     }
 
     // Helper method

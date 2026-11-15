@@ -21,6 +21,7 @@ public class AiChatController {
     private final OllamaService ollamaService;
     private final ChangeImpactService changeImpactService;
     private final AiResponseValidator aiResponseValidator;
+
     private final AiRiskConsistencyValidator riskValidator =
             new AiRiskConsistencyValidator();
 
@@ -29,9 +30,62 @@ public class AiChatController {
                     "\\b([A-Za-z_$][\\w$]*)\\s*\\(\\s*\\)"
             );
 
+    private static final Pattern DIRECT_EXISTENCE_QUESTION =
+            Pattern.compile(
+                    "^\\s*does\\s+[A-Za-z_$][\\w$.]*"
+                    + "\\s+(?:have|declare|contain)\\s+"
+                    + "[A-Za-z_$][\\w$]*\\s*\\(\\s*\\)"
+                    + "(?:\\s*,?\\s*and\\s+does\\s+"
+                    + "[A-Za-z_$][\\w$.]*"
+                    + "\\s+(?:have|declare|contain)\\s+"
+                    + "[A-Za-z_$][\\w$]*\\s*\\(\\s*\\))*"
+                    + "\\s*\\?\\s*$",
+                    Pattern.CASE_INSENSITIVE
+            );
+
     private static final Pattern EXISTENCE_QUESTION =
             Pattern.compile(
                     "\\b(?:does|do|has|have|exist|exists|declare|declares)\\b",
+                    Pattern.CASE_INSENSITIVE
+            );
+
+    /*
+     * Only these narrowly defined types of generated statements
+     * may appear in the user-facing response.
+     *
+     * All other AI-generated text is hidden.
+     *
+     * This is intentionally an allowlist rather than a keyword
+     * blacklist. A blacklist cannot reliably detect invented
+     * method behavior.
+     */
+    private static final Pattern SAFE_TEST_SUGGESTION =
+            Pattern.compile(
+                    "^(?:please\\s+)?(?:consider\\s+)?"
+                            + "(?:testing|test|review|check|inspect|verify)"
+                            + "\\s+(?:the\\s+)?"
+                            + "(?:dependent|impacted|affected|related)"
+                            + "\\s+classes\\.?$",
+                    Pattern.CASE_INSENSITIVE
+            );
+
+    private static final Pattern SAFE_METHOD_SUGGESTION =
+            Pattern.compile(
+                    "^(?:please\\s+)?(?:consider\\s+)?"
+                            + "(?:testing|test|review|check|inspect|verify)"
+                            + "\\s+"
+                            + "([A-Za-z_$][\\w$]*)"
+                            + "\\."
+                            + "([A-Za-z_$][\\w$]*)"
+                            + "\\(\\)"
+                            + "\\.?$",
+                    Pattern.CASE_INSENSITIVE
+            );
+
+    private static final Pattern SAFE_RISK_DESCRIPTION =
+            Pattern.compile(
+                    "^the\\s+structural\\s+risk\\s+is\\s+"
+                            + "(?:low|medium|moderate|high)\\.$",
                     Pattern.CASE_INSENSITIVE
             );
 
@@ -68,7 +122,6 @@ public class AiChatController {
                         : request.classMethods();
 
         if (dependencies.isEmpty()) {
-
             return ResponseEntity.badRequest().body(
                     Map.of("error", "No project dependencies provided")
             );
@@ -88,7 +141,10 @@ public class AiChatController {
             }
         }
 
-        // Answer direct method-existence questions using verified data.
+        /*
+         * Direct method-existence questions are answered
+         * deterministically, without calling Ollama.
+         */
         String verifiedMethodAnswer =
                 answerMethodExistenceQuestion(
                         question,
@@ -97,125 +153,38 @@ public class AiChatController {
                 );
 
         if (verifiedMethodAnswer != null) {
-
             return ResponseEntity.ok(
                     Map.of("answer", verifiedMethodAnswer)
             );
         }
 
-        // Find classes mentioned in the user's question.
         List<String> mentionedClasses = new ArrayList<>();
 
         for (String className : allClasses) {
 
-            String simpleName = simpleName(className);
+            String shortName = simpleName(className);
 
             if (containsClassName(question, className)
-                    || containsClassName(question, simpleName)) {
+                    || containsClassName(question, shortName)) {
 
                 mentionedClasses.add(className);
             }
         }
 
-        String changedClass = mentionedClasses.size() == 1
-                ? mentionedClasses.get(0)
-                : null;
+        String changedClass =
+                mentionedClasses.size() == 1
+                        ? mentionedClasses.get(0)
+                        : null;
 
         String verifiedImpact = "";
 
         if (changedClass != null) {
-
-            Map<String, Object> impactResult =
-                    changeImpactService.analyzeImpact(
-                            changedClass,
-                            dependencies
-                    );
-
-            Map<String, Set<String>> reverseDependencies =
-                    new HashMap<>();
-
-            for (Map.Entry<String, List<String>> entry
-                    : dependencies.entrySet()) {
-
-                if (entry.getValue() == null) {
-                    continue;
-                }
-
-                for (String dependency : entry.getValue()) {
-
-                    reverseDependencies
-                            .computeIfAbsent(
-                                    dependency,
-                                    key -> new TreeSet<>()
-                            )
-                            .add(entry.getKey());
-                }
-            }
-
-            Map<String, Integer> distances =
-                    new LinkedHashMap<>();
-
-            Queue<String> queue = new ArrayDeque<>();
-
-            distances.put(changedClass, 0);
-            queue.add(changedClass);
-
-            while (!queue.isEmpty()) {
-
-                String current = queue.poll();
-                int nextDistance = distances.get(current) + 1;
-
-                for (String dependent :
-                        reverseDependencies.getOrDefault(
-                                current,
-                                Collections.emptySet())) {
-
-                    if (!distances.containsKey(dependent)) {
-
-                        distances.put(dependent, nextDistance);
-                        queue.add(dependent);
-                    }
-                }
-            }
-
-            List<String> directClasses = new ArrayList<>();
-            List<String> indirectClasses = new ArrayList<>();
-
-            for (Map.Entry<String, Integer> entry
-                    : distances.entrySet()) {
-
-                if (entry.getKey().equals(changedClass)) {
-                    continue;
-                }
-
-                if (entry.getValue() == 1) {
-                    directClasses.add(entry.getKey());
-                } else {
-                    indirectClasses.add(entry.getKey());
-                }
-            }
-
-            Collections.sort(directClasses);
-            Collections.sort(indirectClasses);
-
-            verifiedImpact = """
-                    Changed class: %s
-                    Directly impacted classes: %s
-                    Indirectly impacted classes: %s
-                    Total impacted: %s
-                    Structural risk score: %s/100
-                    Structural risk level: %s
-                    """.formatted(
+            verifiedImpact = calculateVerifiedImpact(
                     changedClass,
-                    directClasses,
-                    indirectClasses,
-                    impactResult.get("totalImpacted"),
-                    impactResult.get("riskScore"),
-                    impactResult.get("riskLevel")
+                    dependencies
             );
         }
 
-        // Build verified method information for Ollama.
         StringBuilder verifiedMethods = new StringBuilder();
 
         for (String className : allClasses) {
@@ -245,8 +214,7 @@ public class AiChatController {
                 You are ChangeLens AI, a Java dependency
                 and change-impact analysis assistant.
 
-                You must ground your answers in the
-                supplied project analysis data.
+                Ground your answers in the supplied project data.
 
                 CRITICAL RULES:
 
@@ -328,25 +296,36 @@ public class AiChatController {
             String aiAnswer =
                     ollamaService.generateExplanation(prompt);
 
+            /*
+             * Validation runs on the ORIGINAL generated answer.
+             * This lets us detect unsupported method references
+             * even when the generated explanation is hidden.
+             */
             List<String> unverifiedMethods =
                     aiResponseValidator.findUnverifiedMethods(
                             aiAnswer,
                             classMethods
                     );
 
-
             String riskWarning = "";
+            String verifiedRiskLevel = null;
 
             if (changedClass != null) {
+
                 Map<String, Object> verifiedRisk =
                         changeImpactService.analyzeImpact(
-                                changedClass, dependencies);
+                                changedClass,
+                                dependencies
+                        );
 
-                String riskLevel = String.valueOf(
-                        verifiedRisk.get("riskLevel"));
+                verifiedRiskLevel = String.valueOf(
+                        verifiedRisk.get("riskLevel")
+                );
 
                 if (riskValidator.hasContradiction(
-                        aiAnswer, riskLevel)) {
+                        aiAnswer,
+                        verifiedRiskLevel
+                )) {
 
                     riskWarning = """
                             ### Risk Classification Warning
@@ -357,7 +336,7 @@ public class AiChatController {
                             Use the verified impact analysis as
                             the authoritative result.
 
-                            """.formatted(riskLevel);
+                            """.formatted(verifiedRiskLevel);
                 }
             }
 
@@ -366,7 +345,6 @@ public class AiChatController {
             if (!unverifiedMethods.isEmpty()) {
 
                 validationWarning = """
-
                         ### Unverified Method References
 
                         The AI response mentions method references
@@ -375,7 +353,9 @@ public class AiChatController {
 
                         %s
 
-                        Treat these references as unverified.
+                        These references have been excluded from
+                        the displayed AI suggestions.
+
                         Check the actual source code before
                         relying on them.
 
@@ -383,6 +363,18 @@ public class AiChatController {
                         formatUnverifiedMethods(unverifiedMethods)
                 );
             }
+
+            /*
+             * Never insert the unrestricted aiAnswer directly
+             * into the API response.
+             */
+            String safeSuggestions =
+                    selectSafeSuggestions(
+                            aiAnswer,
+                            allClasses,
+                            classMethods,
+                            verifiedRiskLevel
+                    );
 
             String answer;
 
@@ -401,12 +393,13 @@ public class AiChatController {
 
                         *AI suggestions are not verified method
                         behavior or confirmed test results.*
+
                         """.formatted(
                         formatVerifiedImpact(
                                 changedClass,
                                 verifiedImpact
                         ),
-                        aiAnswer,
+                        safeSuggestions,
                         validationWarning + riskWarning
                 );
 
@@ -422,8 +415,9 @@ public class AiChatController {
                         *This explanation uses the extracted
                         dependency graph and available method names.
                         Method behavior has not been verified.*
+
                         """.formatted(
-                        aiAnswer,
+                        safeSuggestions,
                         validationWarning
                 );
             }
@@ -445,13 +439,239 @@ public class AiChatController {
         }
     }
 
+    /*
+     * This function accepts only a narrow set of generic
+     * testing recommendations and verified risk descriptions.
+     *
+     * It does not try to infer whether arbitrary natural
+     * language statements are true.
+     */
+    private String selectSafeSuggestions(
+            String aiAnswer,
+            Set<String> allClasses,
+            Map<String, List<String>> classMethods,
+            String verifiedRiskLevel) {
+
+        List<String> accepted = new ArrayList<>();
+
+        /*
+         * Process complete lines. Multi-line explanations
+         * and Markdown sections that do not match the
+         * allowlist are discarded.
+         */
+        for (String line : aiAnswer.split("\\R")) {
+
+            String candidate = line.trim();
+
+            if (candidate.isEmpty()) {
+                continue;
+            }
+
+            if (SAFE_TEST_SUGGESTION.matcher(candidate).matches()) {
+                accepted.add(candidate);
+                continue;
+            }
+
+            Matcher methodSuggestion =
+                    SAFE_METHOD_SUGGESTION.matcher(candidate);
+
+            if (methodSuggestion.matches()) {
+
+                String referencedClass = methodSuggestion.group(1);
+                String referencedMethod = methodSuggestion.group(2);
+
+                String resolvedClass = null;
+
+                for (String className : allClasses) {
+
+                    if (className.equals(referencedClass)
+                            || simpleName(className)
+                            .equals(referencedClass)) {
+
+                        if (resolvedClass != null) {
+                            resolvedClass = null;
+                            break;
+                        }
+
+                        resolvedClass = className;
+                    }
+                }
+
+                if (resolvedClass != null) {
+
+                    List<String> declaredMethods =
+                            classMethods.get(resolvedClass);
+
+                    if (declaredMethods != null
+                            && declaredMethods.contains(
+                                    referencedMethod
+                            )) {
+
+                        accepted.add(
+                                "Consider testing `"
+                                        + resolvedClass
+                                        + "."
+                                        + referencedMethod
+                                        + "()`."
+                        );
+                    }
+                }
+
+                continue;
+            }
+
+            if (verifiedRiskLevel != null
+                    && SAFE_RISK_DESCRIPTION
+                    .matcher(candidate)
+                    .matches()) {
+
+                String lower =
+                        candidate.toLowerCase(Locale.ROOT);
+
+                boolean matchesRisk =
+                        switch (verifiedRiskLevel
+                                .toUpperCase(Locale.ROOT)) {
+
+                            case "LOW" ->
+                                    lower.contains("low");
+
+                            case "MEDIUM" ->
+                                    lower.contains("medium")
+                                            || lower.contains("moderate");
+
+                            case "HIGH" ->
+                                    lower.contains("high");
+
+                            default -> false;
+                        };
+
+                if (matchesRisk) {
+                    accepted.add(candidate);
+                }
+            }
+        }
+
+        if (accepted.isEmpty()) {
+            return """
+                    The generated explanation was withheld because
+                    the available project analysis cannot verify
+                    its behavioral claims.
+
+                    Verified class dependencies, impact results,
+                    and declared method names remain available.
+
+                    Review the relevant source code and test
+                    affected classes before making changes.
+                    """;
+        }
+
+        return String.join("\n\n", accepted)
+                + "\n\n"
+                + "*Other generated statements were withheld "
+                + "because their behavior could not be verified.*";
+    }
+
+    private String calculateVerifiedImpact(
+            String changedClass,
+            Map<String, List<String>> dependencies) {
+
+        Map<String, Object> impactResult =
+                changeImpactService.analyzeImpact(
+                        changedClass,
+                        dependencies
+                );
+
+        Map<String, Set<String>> reverseDependencies =
+                new HashMap<>();
+
+        for (Map.Entry<String, List<String>> entry
+                : dependencies.entrySet()) {
+
+            if (entry.getValue() == null) {
+                continue;
+            }
+
+            for (String dependency : entry.getValue()) {
+
+                reverseDependencies
+                        .computeIfAbsent(
+                                dependency,
+                                key -> new TreeSet<>()
+                        )
+                        .add(entry.getKey());
+            }
+        }
+
+        Map<String, Integer> distances =
+                new LinkedHashMap<>();
+
+        Queue<String> queue = new ArrayDeque<>();
+
+        distances.put(changedClass, 0);
+        queue.add(changedClass);
+
+        while (!queue.isEmpty()) {
+
+            String current = queue.poll();
+            int nextDistance = distances.get(current) + 1;
+
+            for (String dependent :
+                    reverseDependencies.getOrDefault(
+                            current,
+                            Collections.emptySet()
+                    )) {
+
+                if (!distances.containsKey(dependent)) {
+
+                    distances.put(dependent, nextDistance);
+                    queue.add(dependent);
+                }
+            }
+        }
+
+        List<String> directClasses = new ArrayList<>();
+        List<String> indirectClasses = new ArrayList<>();
+
+        for (Map.Entry<String, Integer> entry
+                : distances.entrySet()) {
+
+            if (entry.getKey().equals(changedClass)) {
+                continue;
+            }
+
+            if (entry.getValue() == 1) {
+                directClasses.add(entry.getKey());
+            } else {
+                indirectClasses.add(entry.getKey());
+            }
+        }
+
+        Collections.sort(directClasses);
+        Collections.sort(indirectClasses);
+
+        return """
+                Changed class: %s
+                Directly impacted classes: %s
+                Indirectly impacted classes: %s
+                Total impacted: %s
+                Structural risk score: %s/100
+                Structural risk level: %s
+                """.formatted(
+                changedClass,
+                directClasses,
+                indirectClasses,
+                impactResult.get("totalImpacted"),
+                impactResult.get("riskScore"),
+                impactResult.get("riskLevel")
+        );
+    }
+
     private String answerMethodExistenceQuestion(
             String question,
             Set<String> allClasses,
             Map<String, List<String>> classMethods) {
 
-        // Only intercept direct method-existence questions.
-        if (!EXISTENCE_QUESTION.matcher(question).find()) {
+        if (!DIRECT_EXISTENCE_QUESTION.matcher(question).matches()) {
             return null;
         }
 
@@ -472,19 +692,18 @@ public class AiChatController {
 
             for (String className : allClasses) {
 
-                String simpleName = simpleName(className);
+                String shortName = simpleName(className);
 
                 int fullPosition =
                         lastClassPosition(prefix, className);
 
                 int simplePosition =
-                        lastClassPosition(prefix, simpleName);
+                        lastClassPosition(prefix, shortName);
 
                 int position =
                         Math.max(fullPosition, simplePosition);
 
                 if (position > bestPosition) {
-
                     bestPosition = position;
                     matchedClass = className;
                 }
@@ -525,7 +744,7 @@ public class AiChatController {
                         declaredMethods.isEmpty()
                                 ? "No declared methods were extracted."
                                 : "Extracted declared methods: "
-                                        + formatMethodNames(declaredMethods);
+                                + formatMethodNames(declaredMethods);
 
                 results.add(
                         ("- **`%s.%s()`**: This method is not listed "
@@ -574,13 +793,15 @@ public class AiChatController {
 
             int end = index + lowerClass.length();
 
-            boolean validStart = index == 0
-                    || !Character.isJavaIdentifierPart(
+            boolean validStart =
+                    index == 0
+                            || !Character.isJavaIdentifierPart(
                             lowerText.charAt(index - 1)
                     );
 
-            boolean validEnd = end == lowerText.length()
-                    || !Character.isJavaIdentifierPart(
+            boolean validEnd =
+                    end == lowerText.length()
+                            || !Character.isJavaIdentifierPart(
                             lowerText.charAt(end)
                     );
 

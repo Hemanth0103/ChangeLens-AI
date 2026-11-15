@@ -21,6 +21,14 @@ public class AiResponseValidator {
                     "(?<![\\w$.])([A-Za-z_$][\\w$]*)\\s*\\("
             );
 
+    private static final Pattern CLAUSE_SEPARATOR =
+            Pattern.compile(
+                    "\\s*[,;]\\s*(?=(?:but|however|and)\\b)"
+                            + "|\\s+\\b(?:but|however)\\b\\s+"
+                            + "|\\s*;\\s*",
+                    Pattern.CASE_INSENSITIVE
+            );
+
     private static final Set<String> IGNORED_NAMES = Set.of(
             "if", "for", "while", "switch", "catch",
             "return", "throw", "new", "super", "this",
@@ -29,13 +37,6 @@ public class AiResponseValidator {
             "getClass", "wait", "notify", "notifyAll"
     );
 
-    /*
-     * These patterns recognize common ways the AI says
-     * a method is absent or has not been verified.
-     *
-     * This is heuristic language analysis, not a full
-     * natural-language understanding system.
-     */
     private static final List<Pattern> NEGATIVE_PATTERNS = List.of(
             Pattern.compile(
                     "\\b(?:does\\s+not|doesn't|do\\s+not|don't)"
@@ -84,52 +85,93 @@ public class AiResponseValidator {
                 continue;
             }
 
-            validateSentence(
-                    sentence,
-                    classMethods,
-                    warnings
-            );
+            String[] clauses = splitIntoClauses(sentence);
+
+            for (String clause : clauses) {
+
+                if (clause.isBlank()) {
+                    continue;
+                }
+
+                validateClause(
+                        clause,
+                        classMethods,
+                        warnings
+                );
+            }
         }
 
         return new ArrayList<>(warnings);
     }
 
-    private void validateSentence(
-            String sentence,
+    private String[] splitIntoClauses(String sentence) {
+
+        /*
+         * First split on contrastive connectors and
+         * semicolons.
+         */
+        String[] initialParts =
+                CLAUSE_SEPARATOR.split(sentence);
+
+        List<String> clauses = new ArrayList<>();
+
+        for (String part : initialParts) {
+
+            if (part.isBlank()) {
+                continue;
+            }
+
+            /*
+             * Split "and" only when it introduces
+             * another explicit project-class statement.
+             *
+             * This prevents splitting ordinary phrases
+             * such as "toString() and equals()".
+             */
+            String[] andParts = part.split(
+                    "(?i),?\\s+and\\s+(?=[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*\\s+(?:does|doesn't|has|have|uses|provides|defines|declares|implements|contains)\\b)"
+            );
+
+            for (String andPart : andParts) {
+
+                if (!andPart.isBlank()) {
+                    clauses.add(andPart.trim());
+                }
+            }
+        }
+
+        return clauses.toArray(new String[0]);
+    }
+
+    private void validateClause(
+            String clause,
             Map<String, List<String>> classMethods,
             Set<String> warnings) {
 
-        /*
-         * Ignore sentences that clearly deny or cannot
-         * verify method existence.
-         *
-         * We do not want to warn when the AI is already
-         * communicating uncertainty or absence.
-         */
-        if (isNegativeMethodStatement(sentence)) {
+        if (isNegativeMethodStatement(clause)) {
             return;
         }
 
         validateQualifiedMethods(
-                sentence,
+                clause,
                 classMethods,
                 warnings
         );
 
         validateUnqualifiedMethods(
-                sentence,
+                clause,
                 classMethods,
                 warnings
         );
     }
 
     private void validateQualifiedMethods(
-            String sentence,
+            String clause,
             Map<String, List<String>> classMethods,
             Set<String> warnings) {
 
         Matcher matcher =
-                QUALIFIED_METHOD.matcher(sentence);
+                QUALIFIED_METHOD.matcher(clause);
 
         while (matcher.find()) {
 
@@ -158,14 +200,13 @@ public class AiResponseValidator {
     }
 
     private void validateUnqualifiedMethods(
-            String sentence,
+            String clause,
             Map<String, List<String>> classMethods,
             Set<String> warnings) {
 
         List<String> mentionedClasses =
-                findMentionedClasses(sentence, classMethods);
+                findMentionedClasses(clause, classMethods);
 
-        // Do not guess when multiple classes are mentioned.
         if (mentionedClasses.size() != 1) {
             return;
         }
@@ -173,7 +214,7 @@ public class AiResponseValidator {
         String verifiedClass = mentionedClasses.get(0);
 
         Matcher matcher =
-                UNQUALIFIED_METHOD.matcher(sentence);
+                UNQUALIFIED_METHOD.matcher(clause);
 
         while (matcher.find()) {
 
@@ -185,13 +226,11 @@ public class AiResponseValidator {
 
             int start = matcher.start(1);
 
-            // Qualified references were already handled.
             if (start > 0
-                    && sentence.charAt(start - 1) == '.') {
+                    && clause.charAt(start - 1) == '.') {
                 continue;
             }
 
-            // Do not treat constructors as methods.
             if (methodName.equals(simpleName(verifiedClass))) {
                 continue;
             }
@@ -207,11 +246,11 @@ public class AiResponseValidator {
         }
     }
 
-    private boolean isNegativeMethodStatement(String sentence) {
+    private boolean isNegativeMethodStatement(String clause) {
 
         for (Pattern pattern : NEGATIVE_PATTERNS) {
 
-            if (pattern.matcher(sentence).find()) {
+            if (pattern.matcher(clause).find()) {
                 return true;
             }
         }
@@ -235,7 +274,7 @@ public class AiResponseValidator {
     }
 
     private List<String> findMentionedClasses(
-            String sentence,
+            String clause,
             Map<String, List<String>> classMethods) {
 
         List<String> matches = new ArrayList<>();
@@ -252,7 +291,7 @@ public class AiResponseValidator {
                             + ")(?![\\w$])"
             );
 
-            if (classPattern.matcher(sentence).find()) {
+            if (classPattern.matcher(clause).find()) {
                 matches.add(verifiedClass);
             }
         }
