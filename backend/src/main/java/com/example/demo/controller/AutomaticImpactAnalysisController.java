@@ -1,7 +1,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.service.AutomaticImpactAnalysisService;
-
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -19,13 +19,24 @@ public class AutomaticImpactAnalysisController {
     }
 
     @PostMapping("/automatic-impact")
-    public Map<String, Object> analyzeAutomaticImpact(
+    public ResponseEntity<Map<String, Object>> analyzeAutomaticImpact(
             @RequestBody AutomaticImpactRequest request) {
 
-        return automaticImpactAnalysisService.analyze(
-                request.changedClass(),
-                request.sourceFiles()
-        );
+        try {
+            Map<String, Object> result =
+                    automaticImpactAnalysisService.analyze(
+                            request.changedClass(),
+                            request.sourceFiles()
+                    );
+
+            return ResponseEntity.ok(result);
+
+        } catch (IllegalArgumentException exception) {
+
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", exception.getMessage())
+            );
+        }
     }
 
     public record AutomaticImpactRequest(
