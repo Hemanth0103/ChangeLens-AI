@@ -22,6 +22,33 @@ public class ChangeImpactService {
                     "Dependencies must not be null");
         }
 
+        for (Map.Entry<String, List<String>> entry
+                : dependencies.entrySet()) {
+
+            String className = entry.getKey();
+
+            if (className == null || className.isBlank()) {
+                throw new IllegalArgumentException(
+                        "Dependency map contains an invalid class name");
+            }
+
+            List<String> classDependencies = entry.getValue();
+
+            if (classDependencies == null) {
+                throw new IllegalArgumentException(
+                        "Dependencies for " + className
+                                + " must not be null");
+            }
+
+            for (String dependency : classDependencies) {
+                if (dependency == null || dependency.isBlank()) {
+                    throw new IllegalArgumentException(
+                            "Invalid dependency in class "
+                                    + className);
+                }
+            }
+        }
+
         Map<String, Set<String>> reverseDependencies =
                 new HashMap<>();
 
@@ -34,13 +61,8 @@ public class ChangeImpactService {
             String className = entry.getKey();
             allClasses.add(className);
 
-            List<String> classDependencies = entry.getValue();
+            for (String dependency : entry.getValue()) {
 
-            if (classDependencies == null) {
-                continue;
-            }
-
-            for (String dependency : classDependencies) {
                 allClasses.add(dependency);
 
                 reverseDependencies
@@ -60,6 +82,7 @@ public class ChangeImpactService {
         queue.add(changedClass);
 
         while (!queue.isEmpty()) {
+
             String currentClass = queue.poll();
             int currentDistance = distances.get(currentClass);
 
@@ -151,16 +174,15 @@ public class ChangeImpactService {
         Map<String, Object> result =
                 new LinkedHashMap<>();
 
-        // Existing response fields preserved
         result.put("changedClass", changedClass);
         result.put("impactedClasses", impactedClasses);
         result.put("totalImpacted", totalImpacted);
 
-        // New risk analysis fields
         result.put("directImpact", directImpact);
         result.put("indirectImpact", indirectImpact);
         result.put("maxDepth", maxDepth);
-        result.put("projectReach",
+        result.put(
+                "projectReach",
                 Math.round(projectReach * 100.0) / 100.0);
         result.put("riskScore", riskScore);
         result.put("riskLevel", riskLevel);
