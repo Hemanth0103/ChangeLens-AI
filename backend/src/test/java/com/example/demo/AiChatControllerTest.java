@@ -529,6 +529,53 @@ class AiChatControllerTest {
                 .generateExplanation(anyString());
     }
 
+
+    @Test
+    void contradictoryRiskDescriptionProducesWarning() {
+
+        when(ollamaService.generateExplanation(anyString()))
+                .thenReturn("The structural risk is high.");
+
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "What happens if PaymentService changes?",
+                        dependencies,
+                        classMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        String answer = extractAnswer(response);
+
+        assertTrue(answer.contains("Risk Classification Warning"));
+        assertTrue(answer.contains("MEDIUM"));
+    }
+
+    @Test
+    void matchingRiskDescriptionDoesNotProduceWarning() {
+
+        when(ollamaService.generateExplanation(anyString()))
+                .thenReturn("The structural risk is moderate.");
+
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "What happens if PaymentService changes?",
+                        dependencies,
+                        classMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        String answer = extractAnswer(response);
+
+        assertFalse(answer.contains("Risk Classification Warning"));
+        assertTrue(answer.contains("The structural risk is moderate."));
+    }
+
     // Helper method
 
     private String extractAnswer(ResponseEntity<?> response) {

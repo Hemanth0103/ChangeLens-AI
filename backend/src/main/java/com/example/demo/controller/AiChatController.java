@@ -2,6 +2,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.service.AiResponseValidator;
+import com.example.demo.service.AiRiskConsistencyValidator;
 import com.example.demo.service.ChangeImpactService;
 import com.example.demo.service.OllamaService;
 
@@ -20,6 +21,8 @@ public class AiChatController {
     private final OllamaService ollamaService;
     private final ChangeImpactService changeImpactService;
     private final AiResponseValidator aiResponseValidator;
+    private final AiRiskConsistencyValidator riskValidator =
+            new AiRiskConsistencyValidator();
 
     private static final Pattern METHOD_REFERENCE =
             Pattern.compile(
@@ -331,6 +334,33 @@ public class AiChatController {
                             classMethods
                     );
 
+
+            String riskWarning = "";
+
+            if (changedClass != null) {
+                Map<String, Object> verifiedRisk =
+                        changeImpactService.analyzeImpact(
+                                changedClass, dependencies);
+
+                String riskLevel = String.valueOf(
+                        verifiedRisk.get("riskLevel"));
+
+                if (riskValidator.hasContradiction(
+                        aiAnswer, riskLevel)) {
+
+                    riskWarning = """
+                            ### Risk Classification Warning
+
+                            The AI explanation conflicts with the
+                            verified structural risk level: %s.
+
+                            Use the verified impact analysis as
+                            the authoritative result.
+
+                            """.formatted(riskLevel);
+                }
+            }
+
             String validationWarning = "";
 
             if (!unverifiedMethods.isEmpty()) {
@@ -377,7 +407,7 @@ public class AiChatController {
                                 verifiedImpact
                         ),
                         aiAnswer,
-                        validationWarning
+                        validationWarning + riskWarning
                 );
 
             } else {
