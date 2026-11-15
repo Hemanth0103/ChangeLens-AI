@@ -30,6 +30,19 @@ public class AiChatController {
                     "\\b([A-Za-z_$][\\w$]*)\\s*\\(\\s*\\)"
             );
 
+    private static final Pattern DIRECT_EXISTENCE_QUESTION =
+            Pattern.compile(
+                    "^\\s*does\\s+[A-Za-z_$][\\w$.]*"
+                    + "\\s+(?:have|declare|contain)\\s+"
+                    + "[A-Za-z_$][\\w$]*\\s*\\(\\s*\\)"
+                    + "(?:\\s*,?\\s*and\\s+does\\s+"
+                    + "[A-Za-z_$][\\w$.]*"
+                    + "\\s+(?:have|declare|contain)\\s+"
+                    + "[A-Za-z_$][\\w$]*\\s*\\(\\s*\\))*"
+                    + "\\s*\\?\\s*$",
+                    Pattern.CASE_INSENSITIVE
+            );
+
     private static final Pattern EXISTENCE_QUESTION =
             Pattern.compile(
                     "\\b(?:does|do|has|have|exist|exists|declare|declares)\\b",
@@ -658,7 +671,7 @@ public class AiChatController {
             Set<String> allClasses,
             Map<String, List<String>> classMethods) {
 
-        if (!EXISTENCE_QUESTION.matcher(question).find()) {
+        if (!DIRECT_EXISTENCE_QUESTION.matcher(question).matches()) {
             return null;
         }
 
