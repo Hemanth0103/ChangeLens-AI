@@ -209,7 +209,7 @@ function MetricCard({
   )
 }
 
-function ImpactAnalysis({
+function ImpactAnalysisContent({
   dependencies,
   onImpactedClasses,
 }: ImpactAnalysisProps) {
@@ -225,9 +225,6 @@ function ImpactAnalysis({
   const impactControllerRef = useRef<AbortController | null>(null)
   const aiControllerRef = useRef<AbortController | null>(null)
 
-  const onImpactedClassesRef = useRef(onImpactedClasses)
-  onImpactedClassesRef.current = onImpactedClasses
-
   const activeDependencies = dependencies ?? sampleDependencies
 
   const classNames = Array.from(
@@ -238,27 +235,11 @@ function ImpactAnalysis({
   ).sort()
 
   useEffect(() => {
-    impactControllerRef.current?.abort()
-    aiControllerRef.current?.abort()
-
-    impactControllerRef.current = null
-    aiControllerRef.current = null
-
-    setSelectedClass('')
-    setResult(null)
-    setError('')
-    setLoading(false)
-    setAiExplanation('')
-    setAiError('')
-    setAiLoading(false)
-
-    onImpactedClassesRef.current(0)
-
     return () => {
       impactControllerRef.current?.abort()
       aiControllerRef.current?.abort()
     }
-  }, [dependencies])
+  }, [])
 
   const cancelPendingRequests = () => {
     impactControllerRef.current?.abort()
@@ -279,7 +260,7 @@ function ImpactAnalysis({
     setAiExplanation('')
     setAiError('')
 
-    onImpactedClassesRef.current(0)
+    onImpactedClasses(0)
   }
 
   const analyzeImpact = async () => {
@@ -329,7 +310,7 @@ function ImpactAnalysis({
       if (controller.signal.aborted) return
 
       setResult(data)
-      onImpactedClassesRef.current(data.totalImpacted)
+      onImpactedClasses(data.totalImpacted)
     } catch (err) {
       if (controller.signal.aborted) return
 
@@ -414,7 +395,7 @@ function ImpactAnalysis({
     ? calculateImpactDetails(
         result.changedClass,
         activeDependencies
-      ).filter(detail =>
+      ).filter((detail) =>
         result.impactedClasses.includes(detail.className)
       )
     : []
@@ -461,14 +442,14 @@ function ImpactAnalysis({
             aria-label="Select Java class to analyze"
             value={selectedClass}
             disabled={loading || aiLoading}
-            onChange={event => {
+            onChange={(event) => {
               setSelectedClass(event.target.value)
               resetAnalysis()
             }}
           >
             <option value="">Select a Java class...</option>
 
-            {classNames.map(className => (
+            {classNames.map((className) => (
               <option key={className} value={className}>
                 {className}
               </option>
@@ -513,6 +494,7 @@ function ImpactAnalysis({
       {loading && (
         <div className="impact-empty" role="status">
           <h3>Analyzing dependencies...</h3>
+
           <p>
             Calculating affected classes and structural risk.
           </p>
@@ -661,7 +643,7 @@ function ImpactAnalysis({
               </div>
             ) : (
               <div className="impact-path-list">
-                {impactDetails.map(detail => (
+                {impactDetails.map((detail) => (
                   <div
                     className="impact-path-card"
                     key={detail.className}
@@ -779,6 +761,19 @@ function ImpactAnalysis({
         </>
       )}
     </section>
+  )
+}
+
+function ImpactAnalysis(props: ImpactAnalysisProps) {
+  const signature = JSON.stringify(
+    props.dependencies ?? sampleDependencies
+  )
+
+  return (
+    <ImpactAnalysisContent
+      key={signature}
+      {...props}
+    />
   )
 }
 
