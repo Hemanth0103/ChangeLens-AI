@@ -8,7 +8,6 @@ import com.example.demo.service.OllamaService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -23,7 +22,6 @@ class AiChatMethodQuestionTest {
 
     private OllamaService ollamaService;
     private AiChatController controller;
-
     private Map<String, List<String>> dependencies;
     private Map<String, List<String>> classMethods;
 
@@ -73,15 +71,12 @@ class AiChatMethodQuestionTest {
         String answer = extractAnswer(response);
 
         assertFalse(
-                answer.contains("Verified Method Declaration Check"),
-                "A behavior question must not be treated as "
-                        + "a method-existence question"
+                answer.contains("Verified Method Declaration Check")
         );
 
         assertTrue(
                 answer.toLowerCase().contains("behavior")
-                        || answer.toLowerCase().contains("verify"),
-                "The response should explain the verification limit"
+                        || answer.toLowerCase().contains("verify")
         );
 
         verify(ollamaService).generateExplanation(anyString());
@@ -109,25 +104,12 @@ class AiChatMethodQuestionTest {
 
         String answer = extractAnswer(response);
 
-        assertTrue(
-                answer.contains("Verified Impact Analysis"),
-                "The combined question should include "
-                        + "verified impact analysis"
-        );
-
-        assertTrue(
-                answer.contains("demo.OrderService"),
-                "The response should include direct impact"
-        );
-
-        assertTrue(
-                answer.contains("demo.OrderController"),
-                "The response should include indirect impact"
-        );
+        assertTrue(answer.contains("Verified Impact Analysis"));
+        assertTrue(answer.contains("demo.OrderService"));
+        assertTrue(answer.contains("demo.OrderController"));
 
         assertFalse(
-                answer.contains("connects to a payment gateway"),
-                "Unsupported behavioral claims must remain hidden"
+                answer.contains("connects to a payment gateway")
         );
 
         verify(ollamaService).generateExplanation(anyString());
@@ -150,6 +132,35 @@ class AiChatMethodQuestionTest {
 
         assertTrue(
                 answer.contains("Verified Method Declaration Check")
+        );
+
+        assertTrue(
+                answer.contains("demo.PaymentService.processPayment()")
+        );
+
+        verifyNoInteractions(ollamaService);
+    }
+
+    @Test
+    void naturalLanguageMethodExistenceQuestionUsesVerifiedData() {
+        AiChatController.ChatRequest request =
+                new AiChatController.ChatRequest(
+                        "Does the PaymentService class have a method "
+                                + "named processPayment?",
+                        dependencies,
+                        classMethods
+                );
+
+        ResponseEntity<?> response = controller.chat(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        String answer = extractAnswer(response);
+
+        assertTrue(
+                answer.contains("Verified Method Declaration Check"),
+                "Natural-language method questions should use "
+                        + "verified method declarations"
         );
 
         assertTrue(

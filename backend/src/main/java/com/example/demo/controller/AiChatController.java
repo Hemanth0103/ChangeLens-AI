@@ -33,13 +33,27 @@ public class AiChatController {
     private static final Pattern DIRECT_EXISTENCE_QUESTION =
             Pattern.compile(
                     "^\\s*does\\s+[A-Za-z_$][\\w$.]*"
-                    + "\\s+(?:have|declare|contain)\\s+"
-                    + "[A-Za-z_$][\\w$]*\\s*\\(\\s*\\)"
-                    + "(?:\\s*,?\\s*and\\s+does\\s+"
-                    + "[A-Za-z_$][\\w$.]*"
-                    + "\\s+(?:have|declare|contain)\\s+"
-                    + "[A-Za-z_$][\\w$]*\\s*\\(\\s*\\))*"
-                    + "\\s*\\?\\s*$",
+                            + "\\s+(?:have|declare|contain)\\s+"
+                            + "[A-Za-z_$][\\w$]*\\s*\\(\\s*\\)"
+                            + "(?:\\s*,?\\s*and\\s+does\\s+"
+                            + "[A-Za-z_$][\\w$.]*"
+                            + "\\s+(?:have|declare|contain)\\s+"
+                            + "[A-Za-z_$][\\w$]*\\s*\\(\\s*\\))*"
+                            + "\\s*\\?\\s*$",
+                    Pattern.CASE_INSENSITIVE
+            );
+
+    private static final Pattern NATURAL_LANGUAGE_METHOD_EXISTENCE =
+            Pattern.compile(
+                    "^\\s*does\\s+(?:the\\s+)?"
+                            + "([A-Za-z_$][\\w$.]*)"
+                            + "(?:\\s+class)?"
+                            + "\\s+(?:have|declare|contain)\\s+"
+                            + "(?:a\\s+)?method\\s+"
+                            + "(?:named|called)\\s+"
+                            + "([A-Za-z_$][\\w$]*)"
+                            + "(?:\\s*\\(\\s*\\))?"
+                            + "\\s*\\?\\s*$",
                     Pattern.CASE_INSENSITIVE
             );
 
@@ -49,16 +63,6 @@ public class AiChatController {
                     Pattern.CASE_INSENSITIVE
             );
 
-    /*
-     * Only these narrowly defined types of generated statements
-     * may appear in the user-facing response.
-     *
-     * All other AI-generated text is hidden.
-     *
-     * This is intentionally an allowlist rather than a keyword
-     * blacklist. A blacklist cannot reliably detect invented
-     * method behavior.
-     */
     private static final Pattern SAFE_TEST_SUGGESTION =
             Pattern.compile(
                     "^(?:please\\s+)?(?:consider\\s+)?"
@@ -141,10 +145,6 @@ public class AiChatController {
             }
         }
 
-        /*
-         * Direct method-existence questions are answered
-         * deterministically, without calling Ollama.
-         */
         String verifiedMethodAnswer =
                 answerMethodExistenceQuestion(
                         question,
@@ -192,17 +192,12 @@ public class AiChatController {
             List<String> methods = classMethods.get(className);
 
             if (methods == null) {
-
                 verifiedMethods.append(className)
                         .append(": method information unavailable\n");
-
             } else if (methods.isEmpty()) {
-
                 verifiedMethods.append(className)
                         .append(": no declared methods extracted\n");
-
             } else {
-
                 verifiedMethods.append(className)
                         .append(": ")
                         .append(methods)
@@ -296,11 +291,6 @@ public class AiChatController {
             String aiAnswer =
                     ollamaService.generateExplanation(prompt);
 
-            /*
-             * Validation runs on the ORIGINAL generated answer.
-             * This lets us detect unsupported method references
-             * even when the generated explanation is hidden.
-             */
             List<String> unverifiedMethods =
                     aiResponseValidator.findUnverifiedMethods(
                             aiAnswer,
@@ -364,10 +354,6 @@ public class AiChatController {
                 );
             }
 
-            /*
-             * Never insert the unrestricted aiAnswer directly
-             * into the API response.
-             */
             String safeSuggestions =
                     selectSafeSuggestions(
                             aiAnswer,
@@ -439,13 +425,6 @@ public class AiChatController {
         }
     }
 
-    /*
-     * This function accepts only a narrow set of generic
-     * testing recommendations and verified risk descriptions.
-     *
-     * It does not try to infer whether arbitrary natural
-     * language statements are true.
-     */
     private String selectSafeSuggestions(
             String aiAnswer,
             Set<String> allClasses,
@@ -454,11 +433,6 @@ public class AiChatController {
 
         List<String> accepted = new ArrayList<>();
 
-        /*
-         * Process complete lines. Multi-line explanations
-         * and Markdown sections that do not match the
-         * allowlist are discarded.
-         */
         for (String line : aiAnswer.split("\\R")) {
 
             String candidate = line.trim();
@@ -670,6 +644,73 @@ public class AiChatController {
             String question,
             Set<String> allClasses,
             Map<String, List<String>> classMethods) {
+
+        Matcher naturalLanguageMatcher =
+                NATURAL_LANGUAGE_METHOD_EXISTENCE.matcher(question);
+
+        if (naturalLanguageMatcher.matches()) {
+
+            String requestedClass = naturalLanguageMatcher.group(1);
+            String methodName = naturalLanguageMatcher.group(2);
+
+            String matchedClass = null;
+
+            for (String className : allClasses) {
+
+                if (className.equals(requestedClass)
+                        || simpleName(className).equals(requestedClass)) {
+
+                    if (matchedClass != null) {
+                        return null;
+                    }
+
+                    matchedClass = className;
+                }
+            }
+
+            if (matchedClass == null) {
+                return null;
+            }
+
+            List<String> declaredMethods =
+                    classMethods.get(matchedClass);
+
+            String result;
+
+            if (declaredMethods == null) {
+
+                result = "Method information is unavailable "
+                        + "for this class in the uploaded analysis.";
+
+            } else if (declaredMethods.contains(methodName)) {
+
+                result = "This method name is listed "
+                        + "among the extracted declared methods.";
+
+            } else {
+
+                result = "This method is not listed "
+                        + "among the extracted declared methods. "
+                        + (declaredMethods.isEmpty()
+                        ? "No declared methods were extracted."
+                        : "Extracted declared methods: "
+                        + formatMethodNames(declaredMethods));
+            }
+
+            return """
+                    ## Verified Method Declaration Check
+
+                    - **`%s.%s()`**: %s
+
+                    *These results are based on extracted method
+                    declarations, not method bodies, inherited methods,
+                    or runtime behavior.*
+                    """.formatted(
+                    matchedClass,
+                    methodName,
+                    result
+            );
+        }
 
         if (!DIRECT_EXISTENCE_QUESTION.matcher(question).matches()) {
             return null;
