@@ -56,23 +56,12 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
   }, [messages, loading])
 
   useEffect(() => {
-    requestIdRef.current += 1
-    controllerRef.current?.abort()
-    controllerRef.current = null
-
-    setMessages([])
-    setQuestion('')
-    setError('')
-    setFailedQuestion('')
-    setCopiedIndex(null)
-    setLoading(false)
-
     return () => {
       requestIdRef.current += 1
       controllerRef.current?.abort()
       controllerRef.current = null
     }
-  }, [dependencies, classMethods])
+  }, [])
 
   const copyAnswer = async (content: string, index: number) => {
     try {
@@ -95,6 +84,7 @@ function AiChat({ dependencies, classMethods }: AiChatProps) {
 
     const requestId = ++requestIdRef.current
     const controller = new AbortController()
+
     controllerRef.current = controller
 
     if (!isRetry) {

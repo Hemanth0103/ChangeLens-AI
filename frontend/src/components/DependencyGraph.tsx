@@ -265,7 +265,7 @@ function getGraphError(status: number): string {
   return `Graph generation failed (HTTP ${status}).`
 }
 
-function DependencyGraph({
+function DependencyGraphContent({
   dependencies,
   onDependenciesFound,
 }: DependencyGraphProps) {
@@ -284,8 +284,6 @@ function DependencyGraph({
     [dependencies]
   )
 
-  const signature = JSON.stringify(projectDependencies)
-
   useEffect(() => {
     return () => {
       requestIdRef.current += 1
@@ -293,19 +291,6 @@ function DependencyGraph({
       requestRef.current = null
     }
   }, [])
-
-  useEffect(() => {
-    requestIdRef.current += 1
-    requestRef.current?.abort()
-    requestRef.current = null
-
-    setNodes([])
-    setEdges([])
-    setSelectedClass(null)
-    setError('')
-    setLoading(false)
-    onDependenciesFound(0)
-  }, [signature, onDependenciesFound])
 
   const directDependencies = selectedClass
     ? projectDependencies[selectedClass] ?? []
@@ -562,6 +547,14 @@ function DependencyGraph({
       </div>
     </section>
   )
+}
+
+function DependencyGraph(props: DependencyGraphProps) {
+  const signature = JSON.stringify(
+    props.dependencies ?? sampleDependencies
+  )
+
+  return <DependencyGraphContent key={signature} {...props} />
 }
 
 export default DependencyGraph

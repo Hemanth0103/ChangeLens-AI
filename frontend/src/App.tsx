@@ -13,6 +13,7 @@ import './App.css'
 
 function App() {
   const [activePage, setActivePage] = useState('Dashboard')
+  const [projectVersion, setProjectVersion] = useState(0)
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
 
@@ -36,6 +37,7 @@ function App() {
   const handleFilesChange = (files: File[]) => {
     setSelectedFiles(files)
     setProjectResult(null)
+    setProjectVersion((previous) => previous + 1)
     setClassesAnalyzed(0)
     setDependenciesFound(0)
     setImpactedClasses(0)
@@ -43,6 +45,7 @@ function App() {
 
   const handleProjectAnalysis = (result: ProjectAnalysisResult) => {
     setProjectResult(result)
+    setProjectVersion((previous) => previous + 1)
     setClassesAnalyzed(result.totalClasses)
     setDependenciesFound(result.totalDependencies)
     setImpactedClasses(0)
@@ -159,6 +162,7 @@ function App() {
         {activePage === 'AI Chat' && (
           <section className="workspace">
             <AiChat
+              key={projectVersion}
               dependencies={projectResult?.dependencies}
               classMethods={projectResult?.classMethods}
             />
