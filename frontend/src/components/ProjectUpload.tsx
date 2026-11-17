@@ -85,7 +85,9 @@ function isProjectAnalysisResult(
   )
 }
 
-async function getResponseError(response: Response): Promise<string> {
+async function getResponseError(
+  response: Response
+): Promise<string> {
   if (response.status === 400) {
     return 'The selected Java files could not be analyzed. Check the files and try again.'
   }
@@ -103,6 +105,14 @@ async function getResponseError(response: Response): Promise<string> {
   }
 
   return `Project analysis failed (HTTP ${response.status}).`
+}
+
+function getFileKey(file: File): string {
+  return [
+    file.webkitRelativePath || file.name,
+    file.size,
+    file.lastModified,
+  ].join('::')
 }
 
 function ProjectUpload({
@@ -126,33 +136,56 @@ function ProjectUpload({
     }
   }, [])
 
-  const selectFiles = (files: File[], fromFolder: boolean) => {
+  const cancelPendingRequest = () => {
     requestIdRef.current += 1
     requestRef.current?.abort()
     requestRef.current = null
-
     setLoading(false)
     setError('')
+  }
 
+  const selectFiles = (files: File[], fromFolder: boolean) => {
     const javaFiles = files.filter((file) =>
       file.name.toLowerCase().endsWith('.java')
     )
-
-    onSelectedFilesChange(javaFiles)
 
     const ignoredFiles = files.length - javaFiles.length
 
     if (javaFiles.length === 0) {
       setSelectionMessage(
-        'No Java files were found. Please choose .java files or a folder containing Java source files.'
+        'No Java files were found in this selection. Please choose .java files.'
       )
       return
     }
 
+    cancelPendingRequest()
+
+    // Keep previously selected files instead of replacing them.
+    const mergedFiles = [...selectedFiles]
+    const existingKeys = new Set(
+      mergedFiles.map(getFileKey)
+    )
+
+    let addedCount = 0
+
+    for (const file of javaFiles) {
+      const key = getFileKey(file)
+
+      if (!existingKeys.has(key)) {
+        mergedFiles.push(file)
+        existingKeys.add(key)
+        addedCount += 1
+      }
+    }
+
+    onSelectedFilesChange(mergedFiles)
+
     setSelectionMessage(
-      fromFolder
-        ? `${javaFiles.length} Java file(s) found. ${ignoredFiles} non-Java file(s) ignored.`
-        : `${javaFiles.length} Java file(s) selected.`
+      `${addedCount} new Java file(s) added. ` +
+      `${mergedFiles.length} total selected. ` +
+      (fromFolder
+        ? `${ignoredFiles} non-Java file(s) ignored.`
+        : '')
     )
   }
 
@@ -178,6 +211,26 @@ function ProjectUpload({
     }
 
     event.target.value = ''
+  }
+
+  const removeFile = (indexToRemove: number) => {
+    cancelPendingRequest()
+
+    const updatedFiles = selectedFiles.filter(
+      (_, index) => index !== indexToRemove
+    )
+
+    onSelectedFilesChange(updatedFiles)
+
+    setSelectionMessage(
+      `${updatedFiles.length} Java file(s) selected.`
+    )
+  }
+
+  const clearSelection = () => {
+    cancelPendingRequest()
+    onSelectedFilesChange([])
+    setSelectionMessage('File selection cleared.')
   }
 
   const analyzeProject = async () => {
@@ -266,14 +319,29 @@ function ProjectUpload({
       )
     : []
 
+  const panelStyle = {
+    padding: '24px',
+    border: '1px dashed #475569',
+    borderRadius: '12px',
+    background: '#0b1120',
+  }
+
+  const fileStyle = {
+    padding: '10px 14px',
+    marginTop: '8px',
+    background: '#1e293b',
+    borderRadius: '8px',
+    overflowWrap: 'anywhere' as const,
+  }
+
   return (
     <div className="project-upload">
       <h2>Java Project Analysis</h2>
 
       <p>
-        Upload individual Java source files or select an
-        entire project folder to analyze its classes and
-        dependencies.
+        Upload Java source files from multiple folders or
+        select an entire project folder to analyze its
+        classes and dependencies.
       </p>
 
       <div
@@ -285,14 +353,7 @@ function ProjectUpload({
           marginTop: '24px',
         }}
       >
-        <div
-          style={{
-            padding: '24px',
-            border: '1px dashed #475569',
-            borderRadius: '12px',
-            background: '#0b1120',
-          }}
-        >
+        <div style={panelStyle}>
           <label
             htmlFor="java-files"
             style={{
@@ -324,16 +385,16 @@ function ProjectUpload({
               fontSize: '13px',
             }}
           >
-            Select one or more individual .java files.
+            Choose one or more Java files. You can click
+            Choose Files again to add files from another
+            folder without losing your selection.
           </p>
         </div>
 
         <div
           style={{
-            padding: '24px',
+            ...panelStyle,
             border: '1px dashed #38bdf8',
-            borderRadius: '12px',
-            background: '#0b1120',
           }}
         >
           <label
@@ -390,9 +451,35 @@ function ProjectUpload({
 
       {selectedFiles.length > 0 && (
         <div style={{ marginTop: '24px' }}>
-          <h3>
-            Selected Java Files ({selectedFiles.length})
-          </h3>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '12px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <h3>
+              Selected Java Files ({selectedFiles.length})
+            </h3>
+
+            <button
+              type="button"
+              onClick={clearSelection}
+              disabled={loading}
+              style={{
+                padding: '8px 14px',
+                background: '#475569',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+              }}
+            >
+              Clear Selection
+            </button>
+          </div>
 
           <div
             style={{
@@ -407,16 +494,35 @@ function ProjectUpload({
 
               return (
                 <div
-                  key={`${relativePath}-${index}`}
+                  key={`${getFileKey(file)}-${index}`}
                   style={{
-                    padding: '10px 14px',
-                    marginTop: '8px',
-                    background: '#1e293b',
-                    borderRadius: '8px',
-                    overflowWrap: 'anywhere',
+                    ...fileStyle,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
                   }}
                 >
-                  📄 {relativePath}
+                  <span>
+                    📄 {relativePath}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => removeFile(index)}
+                    disabled={loading}
+                    aria-label={`Remove ${file.name}`}
+                    style={{
+                      padding: '6px 10px',
+                      background: '#7f1d1d',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Remove
+                  </button>
                 </div>
               )
             })}
