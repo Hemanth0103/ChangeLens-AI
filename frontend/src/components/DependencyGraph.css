@@ -431,3 +431,32 @@
     font-size: 13px;
   }
 }
+/* Wider Class Inspector */
+
+.cl-explorer-layout {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.cl-details-panel {
+  min-width: 0;
+  padding: 20px;
+}
+
+.cl-details-panel h3 {
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.cl-full-name {
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .cl-explorer-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
