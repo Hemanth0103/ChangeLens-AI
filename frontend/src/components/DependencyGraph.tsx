@@ -27,6 +27,10 @@ type ClassNode = Node<
   'classNode'
 >
 
+const NODE_WIDTH = 300
+const HORIZONTAL_GAP = 100
+const VERTICAL_GAP = 210
+
 const sampleDependencies: Record<string, string[]> = {
   OrderController: ['OrderService'],
   OrderService: ['PaymentService'],
@@ -38,35 +42,63 @@ function ClassNodeComponent({
   selected,
 }: NodeProps<ClassNode>) {
   return (
-    <div className={`cl-class-node ${selected ? 'is-selected' : ''}`}>
+    <div
+      className={`cl-class-node ${selected ? 'is-selected' : ''}`}
+      title={
+        data.packageName
+          ? `${data.packageName}.${data.className}`
+          : data.className
+      }
+    >
       <Handle type="target" position={Position.Top} />
+
       <span className="cl-node-icon">J</span>
-      <div className="cl-node-name">{data.className}</div>
-      <div className="cl-node-package">
+
+      <div
+        className="cl-node-name"
+        title={data.className}
+      >
+        {data.className}
+      </div>
+
+      <div
+        className="cl-node-package"
+        title={data.packageName}
+      >
         {data.packageName || 'default package'}
       </div>
+
       <Handle type="source" position={Position.Bottom} />
     </div>
   )
 }
 
-const nodeTypes = { classNode: ClassNodeComponent }
+const nodeTypes = {
+  classNode: ClassNodeComponent,
+}
 
-function shortName(fullName: string) {
+function shortName(fullName: string): string {
   return fullName.split('.').pop() || fullName
 }
 
 function createGraphLayout(
   dependencies: Record<string, string[]>
-) {
+): {
+  nodes: ClassNode[]
+  edges: Edge[]
+} {
   const allClasses = new Set<string>()
 
   Object.entries(dependencies).forEach(([source, targets]) => {
     allClasses.add(source)
-    targets.forEach((target) => allClasses.add(target))
+
+    targets.forEach((target) => {
+      allClasses.add(target)
+    })
   })
 
   const classNames = [...allClasses].sort()
+
   const levels = new Map<string, number>()
   const visiting = new Set<string>()
 
@@ -105,13 +137,19 @@ function createGraphLayout(
 
   classNames.forEach((name) => {
     const level = levels.get(name) ?? 0
-    groups.set(level, [...(groups.get(level) ?? []), name])
+
+    groups.set(level, [
+      ...(groups.get(level) ?? []),
+      name,
+    ])
   })
 
   const nodes: ClassNode[] = []
 
   for (const [level, names] of groups) {
-    const width = names.length * 240 + (names.length - 1) * 70
+    const totalWidth =
+      names.length * NODE_WIDTH +
+      (names.length - 1) * HORIZONTAL_GAP
 
     names.forEach((name, index) => {
       const lastDot = name.lastIndexOf('.')
@@ -120,31 +158,41 @@ function createGraphLayout(
         id: name,
         type: 'classNode',
         position: {
-          x: index * 310 - width / 2 + 120,
-          y: level * 180,
+          x:
+            index * (NODE_WIDTH + HORIZONTAL_GAP) -
+            totalWidth / 2,
+          y: level * VERTICAL_GAP,
         },
         data: {
           className: shortName(name),
           packageName:
-            lastDot >= 0 ? name.slice(0, lastDot) : '',
+            lastDot >= 0
+              ? name.slice(0, lastDot)
+              : '',
         },
       })
     })
   }
 
-  const edges: Edge[] = Object.entries(dependencies).flatMap(
-    ([source, targets]) =>
-      targets.map((target) => ({
-        id: `${source}->${target}`,
-        source,
-        target,
-        type: 'smoothstep',
-        animated: true,
-        markerEnd: { type: MarkerType.ArrowClosed },
-      }))
+  const edges: Edge[] = Object.entries(
+    dependencies
+  ).flatMap(([source, targets]) =>
+    targets.map((target) => ({
+      id: `${source}->${target}`,
+      source,
+      target,
+      type: 'smoothstep',
+      animated: true,
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+      },
+    }))
   )
 
-  return { nodes, edges }
+  return {
+    nodes,
+    edges,
+  }
 }
 
 function GraphCanvas({
@@ -168,7 +216,7 @@ function GraphCanvas({
     const frame = requestAnimationFrame(() => {
       fitView({
         padding: 0.25,
-        minZoom: 0.75,
+        minZoom: 0.35,
         maxZoom: 1.15,
         duration: 300,
       })
@@ -210,7 +258,8 @@ function GraphCanvas({
                 : '#334155'
               : '#38bdf8',
             strokeWidth: related ? 3 : 2,
-            opacity: selectedClass && !related ? 0.25 : 1,
+            opacity:
+              selectedClass && !related ? 0.25 : 1,
           },
           markerEnd: {
             type: MarkerType.ArrowClosed,
@@ -239,7 +288,12 @@ function GraphCanvas({
       maxZoom={1.5}
       proOptions={{ hideAttribution: true }}
     >
-      <Background color="#243247" gap={22} size={1} />
+      <Background
+        color="#243247"
+        gap={22}
+        size={1}
+      />
+
       <Controls showInteractive={false} />
     </ReactFlow>
   )
@@ -271,8 +325,10 @@ function DependencyGraphContent({
 }: DependencyGraphProps) {
   const [nodes, setNodes] = useState<ClassNode[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
+
   const [selectedClass, setSelectedClass] =
     useState<string | null>(null)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -298,7 +354,9 @@ function DependencyGraphContent({
 
   const directDependents = selectedClass
     ? Object.entries(projectDependencies)
-        .filter(([, targets]) => targets.includes(selectedClass))
+        .filter(([, targets]) =>
+          targets.includes(selectedClass)
+        )
         .map(([source]) => source)
     : []
 
@@ -307,6 +365,7 @@ function DependencyGraphContent({
 
     const controller = new AbortController()
     requestRef.current = controller
+
     const requestId = ++requestIdRef.current
 
     setLoading(true)
@@ -316,13 +375,17 @@ function DependencyGraphContent({
     try {
       const response = await fetch('/api/analyze/graph', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(projectDependencies),
         signal: controller.signal,
       })
 
       if (!response.ok) {
-        throw new Error(getGraphError(response.status))
+        throw new Error(
+          getGraphError(response.status)
+        )
       }
 
       await response.json()
@@ -334,10 +397,13 @@ function DependencyGraphContent({
         return
       }
 
-      const graph = createGraphLayout(projectDependencies)
+      const graph = createGraphLayout(
+        projectDependencies
+      )
 
       setNodes(graph.nodes)
       setEdges(graph.edges)
+
       onDependenciesFound(graph.edges.length)
     } catch (err) {
       if (
@@ -349,6 +415,7 @@ function DependencyGraphContent({
 
       setNodes([])
       setEdges([])
+
       onDependenciesFound(0)
 
       if (err instanceof TypeError) {
@@ -379,7 +446,9 @@ function DependencyGraphContent({
           <span className="cl-eyebrow">
             ARCHITECTURE EXPLORER
           </span>
+
           <h2>Dependency Explorer</h2>
+
           <p>
             Explore your Java project's class relationships.
           </p>
@@ -391,7 +460,9 @@ function DependencyGraphContent({
           onClick={generateGraph}
           disabled={loading}
         >
-          {loading ? 'Generating...' : 'Generate Graph'}
+          {loading
+            ? 'Generating...'
+            : 'Generate Graph'}
         </button>
       </div>
 
@@ -408,21 +479,31 @@ function DependencyGraphContent({
 
         <div className="cl-explorer-stat">
           <span>Data source</span>
+
           <strong className="cl-stat-source">
-            {dependencies ? 'Uploaded project' : 'Sample project'}
+            {dependencies
+              ? 'Uploaded project'
+              : 'Sample project'}
           </strong>
         </div>
       </div>
 
       {!dependencies && (
-        <p className="cl-explorer-notice" role="status">
-          You're viewing sample dependency data. Upload and analyze
-          a Java project to generate its dependency graph.
+        <p
+          className="cl-explorer-notice"
+          role="status"
+        >
+          You're viewing sample dependency data.
+          Upload and analyze a Java project to generate
+          its dependency graph.
         </p>
       )}
 
       {error && (
-        <p className="cl-explorer-error" role="alert">
+        <p
+          className="cl-explorer-error"
+          role="alert"
+        >
           {error}
         </p>
       )}
@@ -445,20 +526,35 @@ function DependencyGraphContent({
             </ReactFlowProvider>
 
             {!hasGraph && !loading && (
-              <div className="cl-graph-empty" role="status">
-                <div className="cl-graph-empty-icon">◎</div>
+              <div
+                className="cl-graph-empty"
+                role="status"
+              >
+                <div className="cl-graph-empty-icon">
+                  ◎
+                </div>
+
                 <h3>No graph generated yet</h3>
+
                 <p>
-                  Click Generate Graph to visualize the class
-                  dependencies.
+                  Click Generate Graph to visualize
+                  the class dependencies.
                 </p>
               </div>
             )}
 
             {loading && (
-              <div className="cl-graph-empty" role="status">
-                <h3>Generating dependency graph...</h3>
-                <p>Please wait while the graph is prepared.</p>
+              <div
+                className="cl-graph-empty"
+                role="status"
+              >
+                <h3>
+                  Generating dependency graph...
+                </h3>
+
+                <p>
+                  Please wait while the graph is prepared.
+                </p>
               </div>
             )}
           </div>
@@ -470,8 +566,15 @@ function DependencyGraphContent({
               <span className="cl-eyebrow">
                 SELECTED CLASS
               </span>
-              <h3>{shortName(selectedClass)}</h3>
-              <p className="cl-full-name">
+
+              <h3 title={shortName(selectedClass)}>
+                {shortName(selectedClass)}
+              </h3>
+
+              <p
+                className="cl-full-name"
+                title={selectedClass}
+              >
                 {selectedClass}
               </p>
 
@@ -479,7 +582,10 @@ function DependencyGraphContent({
 
               <div className="cl-detail-section">
                 <h4>
-                  Depends on <span>{directDependencies.length}</span>
+                  Depends on
+                  <span>
+                    {directDependencies.length}
+                  </span>
                 </h4>
 
                 {directDependencies.length ? (
@@ -489,6 +595,7 @@ function DependencyGraphContent({
                       key={name}
                     >
                       <span className="cl-relationship-dot" />
+
                       <span title={name}>
                         {shortName(name)}
                       </span>
@@ -503,7 +610,10 @@ function DependencyGraphContent({
 
               <div className="cl-detail-section">
                 <h4>
-                  Used by <span>{directDependents.length}</span>
+                  Used by
+                  <span>
+                    {directDependents.length}
+                  </span>
                 </h4>
 
                 {directDependents.length ? (
@@ -512,7 +622,10 @@ function DependencyGraphContent({
                       className="cl-relationship"
                       key={name}
                     >
-                      <span className="cl-relationship-dot yellow" />
+                      <span
+                        className="cl-relationship-dot yellow"
+                      />
+
                       <span title={name}>
                         {shortName(name)}
                       </span>
@@ -528,18 +641,24 @@ function DependencyGraphContent({
               <button
                 type="button"
                 className="cl-clear-button"
-                onClick={() => setSelectedClass(null)}
+                onClick={() =>
+                  setSelectedClass(null)
+                }
               >
                 Clear selection
               </button>
             </>
           ) : (
             <div className="cl-details-placeholder">
-              <div className="cl-placeholder-icon">◎</div>
+              <div className="cl-placeholder-icon">
+                ◎
+              </div>
+
               <h3>Class Inspector</h3>
+
               <p>
-                Select a class in the graph to inspect its
-                dependencies and dependents.
+                Select a class in the graph to inspect
+                its dependencies and dependents.
               </p>
             </div>
           )}
@@ -549,12 +668,19 @@ function DependencyGraphContent({
   )
 }
 
-function DependencyGraph(props: DependencyGraphProps) {
+function DependencyGraph(
+  props: DependencyGraphProps
+) {
   const signature = JSON.stringify(
     props.dependencies ?? sampleDependencies
   )
 
-  return <DependencyGraphContent key={signature} {...props} />
+  return (
+    <DependencyGraphContent
+      key={signature}
+      {...props}
+    />
+  )
 }
 
 export default DependencyGraph

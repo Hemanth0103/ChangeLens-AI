@@ -362,3 +362,72 @@
   line-height: 1.6;
   color: #94a3b8;
 }
+/* ==========================================
+   Dependency Graph Readability Improvements
+   ========================================== */
+
+/* Give graph nodes more room for long Java class names */
+.cl-class-node {
+  box-sizing: border-box;
+  width: 300px;
+  min-height: 110px;
+  padding: 18px 16px;
+}
+
+/* Keep Java class names intact */
+.cl-node-name {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: normal;
+  hyphens: none;
+}
+
+/* Prevent package names from breaking awkwardly */
+.cl-node-package {
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  margin-top: 8px;
+}
+
+/* Improve inspector title readability */
+.cl-details-panel h3 {
+  font-size: 19px;
+  line-height: 1.5;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+
+/* Allow long fully qualified names to wrap */
+.cl-full-name {
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+/* Improve dependency list readability */
+.cl-relationship {
+  line-height: 1.6;
+  align-items: flex-start;
+}
+
+.cl-relationship span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Improve readability of graph nodes at smaller sizes */
+@media (max-width: 650px) {
+  .cl-class-node {
+    width: 280px;
+    padding: 14px;
+  }
+
+  .cl-node-name {
+    font-size: 13px;
+  }
+}
