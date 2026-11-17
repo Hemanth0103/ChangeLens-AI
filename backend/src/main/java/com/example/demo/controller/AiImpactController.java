@@ -19,6 +19,7 @@ public class AiImpactController {
 
     private final ChangeImpactService changeImpactService;
     private final OllamaService ollamaService;
+
     private final AiRiskConsistencyValidator riskValidator =
             new AiRiskConsistencyValidator();
 
@@ -34,10 +35,10 @@ public class AiImpactController {
     public ResponseEntity<Map<String, Object>> explainImpact(
             @RequestBody ImpactRequest request) {
 
-        if (request == null ||
-                request.changedClass() == null ||
-                request.changedClass().isBlank() ||
-                request.dependencies() == null) {
+        if (request == null
+                || request.changedClass() == null
+                || request.changedClass().isBlank()
+                || request.dependencies() == null) {
 
             return ResponseEntity.badRequest().body(
                     Map.of(
@@ -55,7 +56,7 @@ public class AiImpactController {
                     request.dependencies()
             );
 
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException exception) {
 
             return ResponseEntity.badRequest().body(
                     Map.of(
@@ -65,54 +66,102 @@ public class AiImpactController {
             );
         }
 
+        // These classifications come from the verified
+        // structural dependency analysis, not from AI.
+
+        Object directImpactedClasses =
+                analysis.get("directImpactedClasses");
+
+        Object indirectImpactedClasses =
+                analysis.get("indirectImpactedClasses");
+
         String prompt = """
                 You are an expert Java software engineer assisting
                 a static code analysis tool called ChangeLens AI.
 
-                The following data was calculated by the application's
-                dependency analysis engine.
+                The following results were calculated and verified
+                by the application's dependency analysis engine.
 
-                Changed class: %s
+                VERIFIED STRUCTURAL ANALYSIS
 
-                Impacted classes: %s
+                Changed class:
+                %s
+
+                Directly impacted classes (distance = 1):
+                %s
+
+                Indirectly impacted classes (distance >= 2):
+                %s
+
+                All impacted classes:
+                %s
 
                 Direct impact count: %s
-
                 Indirect impact count: %s
-
                 Maximum dependency depth: %s
 
                 Risk score: %s out of 100
-
                 Risk level: %s
 
                 Dependency map:
-
                 %s
 
-                Explain:
+                IMPORTANT DEFINITIONS
 
-                1. Which classes may be affected by this change.
+                - The changed class is the starting point.
+                  It must not be listed as an impacted class.
 
-                2. Why they may be affected, distinguishing direct
-                   dependencies from indirect dependencies.
+                - A directly impacted class depends on the
+                  changed class through one dependency edge.
 
-                3. What regression tests developers should consider.
+                - An indirectly impacted class depends on
+                  the changed class through two or more edges.
 
-                4. What the structural risk score indicates.
+                - The verified direct and indirect class lists
+                  are authoritative.
 
-                Rules:
+                - Never move a class from the direct impact
+                  list to the indirect impact list or vice versa.
+
+                EXPLAIN THE FOLLOWING
+
+                1. Changed class:
+                   Identify the class being modified.
+
+                2. Direct impact:
+                   Explain which verified directly impacted
+                   classes may be affected and why.
+
+                3. Indirect impact:
+                   Explain which verified indirectly impacted
+                   classes may be affected and why.
+
+                4. Recommended regression tests:
+                   Suggest tests based only on the supplied
+                   dependency relationships.
+
+                5. Structural risk:
+                   Explain the verified risk score and level.
+
+                STRICT RULES
 
                 - Use only the supplied dependency data.
                 - Do not invent classes, methods, or dependencies.
+                - Do not invent additional impacted classes.
+                - Do not classify the changed class as impacted.
+                - Preserve the verified direct impact list.
+                - Preserve the verified indirect impact list.
                 - Treat impacts as potential risks, not confirmed bugs.
                 - The risk score is a heuristic, not a probability.
-                - The supplied risk score and risk level are authoritative.
-                - Do not recalculate or change the verified risk level.
-                - Keep your response concise and readable.
+                - Do not recalculate or change the risk score.
+                - Do not change the verified risk level.
+                - Keep the explanation concise and readable.
+                - Use clear Markdown headings and bullet points.
 
                 """.formatted(
                 request.changedClass(),
+                directImpactedClasses,
+                indirectImpactedClasses,
                 analysis.get("impactedClasses"),
                 analysis.get("directImpact"),
                 analysis.get("indirectImpact"),
@@ -126,7 +175,8 @@ public class AiImpactController {
             String explanation =
                     ollamaService.generateExplanation(prompt);
 
-            Map<String, Object> response = new LinkedHashMap<>();
+            Map<String, Object> response =
+                    new LinkedHashMap<>();
 
             response.put("analysis", analysis);
             response.put("aiExplanation", explanation);
@@ -150,7 +200,7 @@ public class AiImpactController {
 
             return ResponseEntity.ok(response);
 
-        } catch (Exception e) {
+        } catch (Exception exception) {
 
             return ResponseEntity.status(
                     HttpStatus.SERVICE_UNAVAILABLE

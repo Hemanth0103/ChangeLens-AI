@@ -92,15 +92,25 @@ public class ChangeImpactService {
                             Collections.emptySet())) {
 
                 if (!distances.containsKey(dependent)) {
+
                     distances.put(
                             dependent,
                             currentDistance + 1);
+
                     queue.add(dependent);
                 }
             }
         }
 
         List<String> impactedClasses = new ArrayList<>();
+
+        // Verified impact classifications
+        List<String> directImpactedClasses =
+                new ArrayList<>();
+
+        List<String> indirectImpactedClasses =
+                new ArrayList<>();
+
         int directImpact = 0;
         int indirectImpact = 0;
         int maxDepth = 0;
@@ -117,9 +127,14 @@ public class ChangeImpactService {
             int distance = entry.getValue();
 
             if (distance == 1) {
+
                 directImpact++;
+                directImpactedClasses.add(entry.getKey());
+
             } else {
+
                 indirectImpact++;
+                indirectImpactedClasses.add(entry.getKey());
             }
 
             maxDepth = Math.max(maxDepth, distance);
@@ -136,6 +151,7 @@ public class ChangeImpactService {
                 : (totalImpacted * 100.0) / otherClasses;
 
         // Transparent heuristic risk formula:
+        //
         // Direct impact: up to 30 points
         // Indirect impact: up to 20 points
         // Dependency depth: up to 20 points
@@ -175,15 +191,27 @@ public class ChangeImpactService {
                 new LinkedHashMap<>();
 
         result.put("changedClass", changedClass);
-        result.put("impactedClasses", impactedClasses);
-        result.put("totalImpacted", totalImpacted);
 
+        result.put("impactedClasses", impactedClasses);
+
+        // New verified class lists
+        result.put(
+                "directImpactedClasses",
+                directImpactedClasses);
+
+        result.put(
+                "indirectImpactedClasses",
+                indirectImpactedClasses);
+
+        result.put("totalImpacted", totalImpacted);
         result.put("directImpact", directImpact);
         result.put("indirectImpact", indirectImpact);
         result.put("maxDepth", maxDepth);
+
         result.put(
                 "projectReach",
                 Math.round(projectReach * 100.0) / 100.0);
+
         result.put("riskScore", riskScore);
         result.put("riskLevel", riskLevel);
 
