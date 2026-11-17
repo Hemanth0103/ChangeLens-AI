@@ -2,6 +2,7 @@
 .impact-dashboard {
   color: #f8fafc;
   width: 100%;
+  min-width: 0;
 }
 
 .impact-heading,
@@ -352,20 +353,228 @@
   background: #0f172a;
   border: 1px solid #475569;
   border-radius: 10px;
-  padding: 20px;
+  padding: 24px;
   margin-top: 20px;
+  min-width: 0;
+  text-align: left;
 }
+
+.impact-ai-response > h4 {
+  margin: 0 0 20px;
+  color: #f8fafc;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: left;
+}
+
+/* AI-generated Markdown */
 
 .impact-markdown {
   color: #e2e8f0;
-  line-height: 1.8;
   font-size: 14px;
+  line-height: 1.8;
+  text-align: left;
   overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.impact-markdown * {
+  text-align: left;
+}
+
+.impact-markdown h1,
+.impact-markdown h2,
+.impact-markdown h3,
+.impact-markdown h4,
+.impact-markdown h5,
+.impact-markdown h6 {
+  color: #f8fafc;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 24px 0 12px;
+}
+
+.impact-markdown h1 {
+  font-size: 22px;
+}
+
+.impact-markdown h2 {
+  font-size: 19px;
+}
+
+.impact-markdown h3 {
+  font-size: 16px;
+  color: #7dd3fc;
+}
+
+.impact-markdown h4,
+.impact-markdown h5,
+.impact-markdown h6 {
+  font-size: 14px;
+}
+
+.impact-markdown > :first-child {
+  margin-top: 0;
+}
+
+.impact-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.impact-markdown p {
+  margin: 10px 0 16px;
+  color: #cbd5e1;
+  line-height: 1.8;
+}
+
+.impact-markdown strong {
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.impact-markdown em {
+  color: #c4b5fd;
+}
+
+.impact-markdown ul,
+.impact-markdown ol {
+  display: block;
+  list-style-position: outside;
+  margin: 12px 0 18px;
+  padding-left: 28px;
+}
+
+.impact-markdown ul {
+  list-style-type: disc;
+}
+
+.impact-markdown ol {
+  list-style-type: decimal;
+}
+
+.impact-markdown li {
+  display: list-item;
+  padding-left: 4px;
+  margin: 8px 0;
+  line-height: 1.75;
+}
+
+.impact-markdown li::marker {
+  color: #38bdf8;
+  font-weight: 700;
+}
+
+.impact-markdown li > p {
+  margin: 4px 0 8px;
+}
+
+.impact-markdown li ul,
+.impact-markdown li ol {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.impact-markdown li ul {
+  list-style-type: circle;
+}
+
+.impact-markdown li li {
+  margin: 5px 0;
+}
+
+.impact-markdown code {
+  background: #1e293b;
+  color: #a5f3fc;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, monospace;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .impact-markdown pre {
+  background: #020617;
+  border: 1px solid #334155;
+  border-radius: 9px;
+  padding: 16px;
+  margin: 16px 0;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.impact-markdown pre code {
+  background: transparent;
+  padding: 0;
+  color: #e2e8f0;
+  white-space: pre;
+  overflow-wrap: normal;
+  font-size: 12px;
+}
+
+.impact-markdown blockquote {
+  border-left: 3px solid #38bdf8;
+  background: #172033;
+  padding: 12px 16px;
+  margin: 16px 0;
+  color: #cbd5e1;
+  border-radius: 0 8px 8px 0;
+}
+
+.impact-markdown blockquote p {
+  margin: 0;
+}
+
+.impact-markdown a {
+  color: #7dd3fc;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.impact-markdown a:hover {
+  color: #bae6fd;
+}
+
+.impact-markdown hr {
+  border: 0;
+  border-top: 1px solid #334155;
+  margin: 22px 0;
+}
+
+.impact-markdown table {
+  display: block;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
   overflow-x: auto;
 }
+
+.impact-markdown th,
+.impact-markdown td {
+  border: 1px solid #334155;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.impact-markdown th {
+  background: #1e293b;
+  color: #f8fafc;
+}
+
+.impact-markdown td {
+  color: #cbd5e1;
+}
+
+.impact-ai-response .impact-disclaimer {
+  margin: 22px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid #334155;
+  text-align: left;
+}
+
+/* Alerts and empty states */
 
 .impact-alert,
 .impact-warning {
@@ -387,6 +596,8 @@
   color: #94a3b8;
   padding: 24px 0;
 }
+
+/* Responsive layout */
 
 @media (max-width: 1050px) {
   .impact-metrics-grid {
@@ -417,5 +628,18 @@
 
   .impact-button {
     width: 100%;
+  }
+
+  .impact-ai-response {
+    padding: 16px;
+  }
+
+  .impact-markdown {
+    font-size: 13px;
+  }
+
+  .impact-markdown ul,
+  .impact-markdown ol {
+    padding-left: 22px;
   }
 }
