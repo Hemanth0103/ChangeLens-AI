@@ -1,15 +1,15 @@
 <!--
 Sync Impact Report (temporary review material; remove before committing)
-Version change: uninitialized scaffold → 1.0.0 (initial adoption)
-Modified principles: replaced five unnamed scaffold slots with:
-- I. Secure Handling of Untrusted Projects
-- II. Accurate and Explainable Dependency Analysis
-- III. Automated Verification as a Delivery Gate
-- IV. Deterministic Core, Optional AI Assistance
-- V. Deliverable Scope for Two Students
-Added sections: Technology and Architecture Constraints; Development Workflow and Quality Gates;
-completed Governance.
-Removed sections: none; generic scaffold instructions replaced with project rules.
+Version change: 1.0.0 → 2.0.0 (mandatory LLM integration redefines optional AI delivery)
+Modified principles:
+- IV. Deterministic Core, Optional AI Assistance → IV. Deterministic Core, Mandatory LLM Integration
+- V. Deliverable Scope for Two Students (required LLM milestone after the deterministic workflow)
+Added sections: none.
+Removed sections: none.
+Related updates: Technology and Architecture Constraints now require LLM integration and
+environment-variable API keys. All other existing principles and safeguards are preserved.
+Consistency follow-up: review dependent specifications, plans, and tasks for mandatory LLM
+delivery; this amendment changes only the constitution.
 Follow-up TODOs: none.
 -->
 # ChangeLens AI Constitution
@@ -70,18 +70,27 @@ error states. A small end-to-end smoke test MUST exercise the main user journey.
 LLM calls MUST be replaced by controlled test doubles in required automated checks. Passing
 tests, backend compilation, frontend type checking, and production builds MUST gate delivery.
 
-### IV. Deterministic Core, Optional AI Assistance
+### IV. Deterministic Core, Mandatory LLM Integration
+
+The final project MUST integrate an LLM API to explain detected code dependencies and suggest
+testing areas. This integration is a mandatory delivery requirement. The LLM MUST receive
+structured results from the deterministic dependency analyzer, including detected relationships,
+impact results, and relevant diagnostics and limitations. Generated explanations and testing
+suggestions MUST be grounded in those results. The LLM MUST NOT invent dependency relationships
+or create or override dependency edges, impact sets, or analysis facts. LLM output MUST be
+labeled as generated explanation or testing suggestions.
 
 Uploading, parsing, building the dependency graph, computing impact, and viewing results MUST
-work without an LLM API or credentials. Optional LLM output MUST be labeled as generated
-explanation and MUST NOT create or override dependency edges, impact sets, or analysis facts.
-Failures, timeouts, or disabled AI access MUST leave the core workflow usable.
+work without an LLM API or credentials. API unavailability, failures, timeouts, or disabled AI
+access MUST leave the core impact analysis workflow usable. Runtime fallback does not waive
+the final project's mandatory LLM integration requirement.
 
 Sending source code or source-derived context to an external LLM MUST require explicit user
 opt-in for that analysis and clear disclosure of the data sent. Requests MUST minimize source
-content, use server-side secrets, and enforce request size, timeout, and cost limits. Uploaded
+content, use server-side API keys supplied through environment variables, and enforce request
+size, timeout, and cost limits. Uploaded
 text MUST be treated as data, never as trusted instructions or authorization to invoke tools.
-This keeps reproducibility and privacy independent of an optional external service.
+This keeps reproducibility and privacy independent of external service availability.
 
 ### V. Deliverable Scope for Two Students
 
@@ -96,7 +105,8 @@ default architecture. New infrastructure or major capabilities MUST include a do
 need, effort estimate, and tradeoff against the remaining schedule. Multi-language analysis,
 full runtime resolution, microservices, distributed processing, automatic code modification,
 and enterprise integrations MUST remain outside the initial scope unless separately approved
-through planning. Optional AI MUST follow a working, tested deterministic workflow.
+through planning. Required LLM integration MUST follow a working, tested deterministic workflow
+and MUST be completed before final project delivery.
 
 ## Technology and Architecture Constraints
 
@@ -105,7 +115,7 @@ through planning. Optional AI MUST follow a working, tested deterministic workfl
 - Dependency storage and traversal MUST use an explicit directed graph model; reverse BFS
   MUST implement impact propagation. PostgreSQL MUST store durable application data, with
   versioned schema migrations. A separate graph database is outside the initial architecture.
-- Upload handling, parsing, graph construction, impact traversal, persistence, and optional AI
+- Upload handling, parsing, graph construction, impact traversal, persistence, and required LLM
   integration MUST have clear module boundaries so core analysis can be tested independently.
 - APIs MUST validate inputs, expose stable node identities and structured errors, and carry
   analysis diagnostics and completeness information through to the frontend.
@@ -113,7 +123,8 @@ through planning. Optional AI MUST follow a working, tested deterministic workfl
   MUST be defined before accepting the associated feature. A representative bounded project
   fixture MUST verify those budgets; oversized inputs MUST fail with an explicit explanation.
 - Dependency versions MUST be pinned through build manifests or lockfiles as appropriate.
-  Configuration MUST be externalized, and secrets MUST NOT be committed or shipped to clients.
+  Configuration MUST be externalized, and API keys MUST be supplied through environment
+  variables. Secrets MUST NOT be committed or shipped to clients.
 
 ## Development Workflow and Quality Gates
 
@@ -151,4 +162,4 @@ last-amended date while preserving the original ratification date. Dependent art
 be reviewed for consistency when an amendment is adopted; this constitution workflow itself
 changes only this document.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21
+**Version**: 2.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21
