@@ -1,7 +1,9 @@
 
 package com.example.demo.service;
 
-import com.github.javaparser.StaticJavaParser;
+import com.github.javaparser.JavaParser;
+import com.github.javaparser.ParseResult;
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
@@ -21,6 +23,13 @@ import java.util.Set;
 public class AutomaticImpactAnalysisService {
 
     private final ChangeImpactService changeImpactService;
+
+    private final JavaParser javaParser = new JavaParser(
+            new ParserConfiguration()
+                    .setLanguageLevel(
+                            ParserConfiguration.LanguageLevel.JAVA_21
+                    )
+    );
 
     public AutomaticImpactAnalysisService(
             ChangeImpactService changeImpactService) {
@@ -55,17 +64,19 @@ public class AutomaticImpactAnalysisService {
                         "Source file is empty: " + entry.getKey());
             }
 
-            try {
-                parsedFiles.add(
-                        StaticJavaParser.parse(sourceCode)
-                );
-            } catch (RuntimeException exception) {
+            ParseResult<CompilationUnit> parseResult =
+                    javaParser.parse(sourceCode);
+
+            if (!parseResult.isSuccessful()
+                    || parseResult.getResult().isEmpty()) {
+
                 throw new IllegalArgumentException(
                         "Unable to parse source file: "
-                                + entry.getKey(),
-                        exception
+                                + entry.getKey()
                 );
             }
+
+            parsedFiles.add(parseResult.getResult().get());
         }
 
         // Step 3: Collect project classes using qualified names.
@@ -121,12 +132,10 @@ public class AutomaticImpactAnalysisService {
 
                 if (importDeclaration.isAsterisk()) {
 
-                    // Example: import com.example.payment.*;
                     wildcardImports.add(importedName);
 
                 } else {
 
-                    // Example: import com.example.payment.PaymentService;
                     String simpleName = importedName.substring(
                             importedName.lastIndexOf('.') + 1
                     );

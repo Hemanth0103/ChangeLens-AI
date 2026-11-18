@@ -2,6 +2,7 @@
 package com.example.demo;
 
 import com.github.javaparser.JavaParser;
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
@@ -22,7 +23,12 @@ import java.util.*;
 @RequestMapping("/api/projects")
 public class ProjectAnalysisController {
 
-    private final JavaParser javaParser = new JavaParser();
+    private final JavaParser javaParser = new JavaParser(
+            new ParserConfiguration()
+                    .setLanguageLevel(
+                            ParserConfiguration.LanguageLevel.JAVA_21
+                    )
+    );
 
     @PostMapping(
             value = "/analyze",

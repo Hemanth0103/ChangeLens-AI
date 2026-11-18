@@ -362,6 +362,52 @@ public class AiChatController {
                             verifiedRiskLevel
                     );
 
+            // Step 465: Provide useful verified guidance when
+            // the AI explanation is rejected by the safety filter.
+
+            String normalizedQuestion =
+                    question.toLowerCase(Locale.ROOT);
+
+            boolean asksAboutImpact =
+                    normalizedQuestion.contains("impact")
+                            || normalizedQuestion.contains("affect")
+                            || normalizedQuestion.contains("depend")
+                            || normalizedQuestion.contains("change")
+                            || normalizedQuestion.contains("modify");
+
+            if (changedClass != null
+                    && asksAboutImpact
+                    && safeSuggestions.startsWith(
+                            "The generated explanation was withheld")) {
+
+                safeSuggestions = """
+                        The dependency graph identifies classes that
+                        may be affected by a change to `%s`.
+
+                        The verified analysis above distinguishes:
+
+                        - **Direct dependents:** Classes one
+                          dependency edge away from the changed class.
+                        - **Indirect dependents:** Classes two or
+                          more dependency edges away.
+
+                        ### Recommended Next Steps
+
+                        1. Review the directly impacted classes.
+                        2. Inspect the indirectly impacted classes.
+                        3. Test relevant interactions after changes.
+                        4. Check for regressions in affected components.
+
+                        The structural risk score is based on
+                        dependency relationships. It does not predict
+                        whether a bug will occur.
+
+                        *This guidance is derived from verified
+                        project dependency data. Unsupported
+                        AI-generated claims were excluded.*
+                        """.formatted(changedClass);
+            }
+
             String answer;
 
             if (changedClass != null) {
